@@ -1,4 +1,4 @@
-# SkinWise 🧴
+# SkinWise
 
 ## Description
 A skincare application that helps users discover the ingredients in their skincare, build personalized routines, and track their progress with ingredient analysis and compatibility checking.
@@ -39,4 +39,4 @@ A skincare application that helps users discover the ingredients in their skinca
 
 ## License
 📄 SkinWise © 2025 by Matilda Vazquez-Guzman. This project is licensed under the [MIT License](https://opensource.org/license/MIT).
-See the LICENSE file for details.
+See the [LICENSE](https://github.com/mvazquezguzman/skincare-project/blob/main/documents/LICENSE.md) file for details.
