@@ -6,11 +6,11 @@ A skincare application that helps users discover the ingredients in their skinca
 ---
 
 ## Features
-- **User Profile & Skin Type Assessment** - Personalized skin analysis and profile creation
-- **Ingredient Analysis & Safety Checker** - Comprehensive ingredient database with safety information
-- **Conflict Analyzer for Ingredient Compatibility** - Advanced algorithm to detect ingredient conflicts
-- **Personalized Routine Builder** - AI-powered routine generation based on skin type and concerns
-- **Skincare Diary & Progress Tracking** - Track your skincare journey with detailed analytics
+- **User Profile & Skin Type Assessment**
+- **Ingredient Analysis & Safety Checker**
+- **Conflict Analyzer for Ingredient Compatibility**
+- **Personalized Routine Builder**
+- **Skincare Diary & Progress Tracking**
 
 ---
 
