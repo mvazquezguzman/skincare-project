@@ -4,6 +4,7 @@ import { Montserrat } from "next/font/google"
 import { Open_Sans } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
+import { SessionProvider } from "@/components/SessionProvider"
 import { AuthProvider } from "@/contexts/AuthContext"
 import "./globals.css"
 
@@ -37,10 +38,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`font-sans ${montserrat.variable} ${openSans.variable} antialiased`}>
-        <AuthProvider>
-          <Suspense fallback={null}>{children}</Suspense>
-          <Analytics />
-        </AuthProvider>
+        <SessionProvider>
+          <AuthProvider>
+            <Suspense fallback={null}>{children}</Suspense>
+            <Analytics />
+          </AuthProvider>
+        </SessionProvider>
       </body>
     </html>
   )

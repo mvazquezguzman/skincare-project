@@ -30,6 +30,7 @@ next-env.d.ts
 *.db
 *.db-journal
 /prisma/dev.db*
+/prisma/database/
 
 # IDE and editor files
 .vscode/

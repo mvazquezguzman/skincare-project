@@ -42,6 +42,11 @@ export default function HomePage() {
       return
     }
     
+    if (signupData.password.length < 6) {
+      setError("Password must be at least 6 characters long")
+      return
+    }
+    
     try {
       await signup({
         firstName: signupData.firstName,
@@ -57,8 +62,8 @@ export default function HomePage() {
         password: "",
         confirmPassword: ""
       })
-    } catch (err) {
-      setError("Failed to create account. Please try again.")
+    } catch (err: any) {
+      setError(err.message || "Failed to create account. Please try again.")
     }
   }
 
@@ -73,8 +78,8 @@ export default function HomePage() {
         email: "",
         password: ""
       })
-    } catch (err) {
-      setError("Invalid email or password. Please try again.")
+    } catch (err: any) {
+      setError(err.message || "Invalid email or password. Please try again.")
     }
   }
 

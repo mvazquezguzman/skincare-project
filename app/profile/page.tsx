@@ -41,7 +41,7 @@ type RoutineStep = {
 type UserProfile = {
   id: string
   name: string
-  skinType: "normal" | "dry" | "oily" | "combination" | "sensitive"
+  skinType: "normal" | "dry" | "oily" | "combination" | "sensitive" | null
   skinConcerns: string[]
   skinGoals: string[]
   allergies: string[]
@@ -57,6 +57,11 @@ const getUserProfile = (): UserProfile | null => {
   return stored ? JSON.parse(stored) : null
 }
 
+const saveUserProfile = (profile: UserProfile): void => {
+  if (typeof window === "undefined") return
+  localStorage.setItem("skinwise-profile", JSON.stringify(profile))
+}
+
 export default function ProfilePage() {
   const { user, isAuthenticated, isLoading } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -64,31 +69,99 @@ export default function ProfilePage() {
   const [newStep, setNewStep] = useState<Partial<RoutineStep>>({})
 
   useEffect(() => {
-    const userProfile = getUserProfile()
-    setProfile(userProfile)
-  }, [])
+    const initializeProfile = async () => {
+      if (!user) return
+
+      // First check localStorage for existing profile
+      let userProfile = getUserProfile()
+      
+      // If no profile exists, create one from user data
+      if (!userProfile) {
+        try {
+          // Fetch user data from database
+          const response = await fetch('/api/auth/me')
+          if (response.ok) {
+            const { user: dbUser } = await response.json()
+            
+            // Create new profile with database data
+            userProfile = {
+              id: dbUser.id,
+              name: `${dbUser.firstName} ${dbUser.lastName}`,
+              skinType: dbUser.skinType as UserProfile["skinType"] || null,
+              skinConcerns: dbUser.skinConcerns ? JSON.parse(dbUser.skinConcerns) : [],
+              skinGoals: dbUser.skinGoals ? JSON.parse(dbUser.skinGoals) : [],
+              allergies: dbUser.allergies ? JSON.parse(dbUser.allergies) : [],
+              currentRoutine: {
+                morning: [],
+                evening: []
+              }
+            }
+            
+            // Save to localStorage
+            saveUserProfile(userProfile)
+          }
+        } catch (error) {
+          console.error('Failed to fetch user profile:', error)
+          // Create a basic profile if API fails
+          userProfile = {
+            id: user.id,
+            name: `${user.firstName} ${user.lastName}`,
+            skinType: null,
+            skinConcerns: [],
+            skinGoals: [],
+            allergies: [],
+            currentRoutine: {
+              morning: [],
+              evening: []
+            }
+          }
+          saveUserProfile(userProfile)
+        }
+      }
+      
+      setProfile(userProfile)
+    }
+
+    if (isAuthenticated && user) {
+      initializeProfile()
+    }
+  }, [user, isAuthenticated])
 
   const addRoutineStep = (timeOfDay: "morning" | "evening", step: Omit<RoutineStep, "id">): void => {
-    const profile = getUserProfile()
-    if (!profile) return
+    const currentProfile = getUserProfile()
+    if (!currentProfile) return
 
     const newStep: RoutineStep = {
       ...step,
       id: `${timeOfDay}-${Date.now()}`,
     }
 
-    profile.currentRoutine[timeOfDay].push(newStep)
-    localStorage.setItem("skinwise-profile", JSON.stringify(profile))
-    setProfile(profile)
+    const updatedProfile = {
+      ...currentProfile,
+      currentRoutine: {
+        ...currentProfile.currentRoutine,
+        [timeOfDay]: [...currentProfile.currentRoutine[timeOfDay], newStep]
+      }
+    }
+
+    saveUserProfile(updatedProfile)
+    setProfile(updatedProfile)
   }
 
   const removeRoutineStep = (timeOfDay: "morning" | "evening", stepId: string): void => {
-    const profile = getUserProfile()
-    if (!profile) return
+    const currentProfile = getUserProfile()
+    if (!currentProfile) return
 
-    profile.currentRoutine[timeOfDay] = profile.currentRoutine[timeOfDay].filter((step) => step.id !== stepId)
-    localStorage.setItem("skinwise-profile", JSON.stringify(profile))
-    setProfile(profile)
+    const updatedProfile = {
+      ...currentProfile,
+      currentRoutine: {
+        ...currentProfile.currentRoutine,
+        [timeOfDay]: currentProfile.currentRoutine[timeOfDay].filter((step) => step.id !== stepId)
+      }
+    }
+
+    saveUserProfile(updatedProfile)
+    setProfile(updatedProfile)
   }
 
   const handleAddStep = (timeOfDay: "morning" | "evening") => {
@@ -199,27 +272,42 @@ export default function ProfilePage() {
           <div className="bg-muted/30 rounded-lg p-6">
             <h2 className="font-montserrat font-bold text-xl mb-4">My Skin</h2>
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="capitalize">
-                  {profile.skinType} skin
-                </Badge>
-                {profile.skinConcerns.map((concern) => (
-                  <Badge key={concern} variant="outline">
-                    {concern}
-                  </Badge>
-                ))}
-              </div>
-              {profile.skinGoals.length > 0 && (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Goals:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {profile.skinGoals.map((goal) => (
-                      <Badge key={goal} variant="secondary">
-                        {goal}
+              {!profile.skinType && profile.skinConcerns.length === 0 ? (
+                <div className="text-center py-4">
+                  <p className="text-muted-foreground mb-4">
+                    Complete your skin profile to get personalized recommendations
+                  </p>
+                  <Button asChild>
+                    <Link href="/routine-builder">Complete Profile</Link>
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    {profile.skinType && (
+                      <Badge variant="secondary" className="capitalize">
+                        {profile.skinType} skin
+                      </Badge>
+                    )}
+                    {profile.skinConcerns.map((concern) => (
+                      <Badge key={concern} variant="outline">
+                        {concern}
                       </Badge>
                     ))}
                   </div>
-                </div>
+                  {profile.skinGoals.length > 0 && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Goals:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {profile.skinGoals.map((goal) => (
+                          <Badge key={goal} variant="secondary">
+                            {goal}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { useSession, signIn, signOut } from "next-auth/react"
 
-interface User {
+export interface User {
   id: string
   email: string
   firstName: string
@@ -28,56 +28,50 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { data: session, status } = useSession()
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Check for existing session on mount
-    checkAuthStatus()
-  }, [])
-
-  const checkAuthStatus = async () => {
-    try {
-      // Check for existing session or localStorage fallback
-      const savedUser = localStorage.getItem('skincare-user')
-      if (savedUser) {
-        setUser(JSON.parse(savedUser))
+    if (status === "loading") {
+      setIsLoading(true)
+    } else if (status === "authenticated" && session?.user) {
+      // Convert NextAuth session to our User format
+      const userData: User = {
+        id: session.user.id || "",
+        email: session.user.email || "",
+        firstName: session.user.name?.split(' ')[0] || "",
+        lastName: session.user.name?.split(' ').slice(1).join(' ') || "",
+        avatar: session.user.image || '/placeholder-user.jpg'
       }
-    } catch (error) {
-      console.error('Auth check failed:', error)
-    } finally {
+      setUser(userData)
+      setIsLoading(false)
+    } else {
+      setUser(null)
       setIsLoading(false)
     }
-  }
+  }, [session, status])
 
   const login = async (email: string, password: string) => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
       })
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed')
+      if (result?.error) {
+        // Provide more specific error messages
+        if (result.error === 'CredentialsSignin') {
+          throw new Error('Invalid email or password')
+        }
+        throw new Error(result.error)
       }
 
-      const userData: User = {
-        id: data.user.id,
-        email: data.user.email,
-        firstName: data.user.firstName,
-        lastName: data.user.lastName,
-        avatar: data.user.avatar || '/placeholder-user.jpg'
+      if (!result?.ok) {
+        throw new Error('Login failed')
       }
-
-      setUser(userData)
-      localStorage.setItem('skincare-user', JSON.stringify(userData))
-      localStorage.setItem('auth-token', data.token)
     } catch (error) {
       console.error('Login failed:', error)
       throw error
@@ -108,16 +102,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Signup failed')
       }
 
-      const newUser: User = {
-        id: data.user.id,
-        email: data.user.email,
-        firstName: data.user.firstName,
-        lastName: data.user.lastName,
-        avatar: data.user.avatar || '/placeholder-user.jpg'
+      // After successful signup, automatically log in the user
+      const result = await signIn('credentials', {
+        email: userData.email,
+        password: userData.password,
+        redirect: false,
+      })
+
+      if (result?.error) {
+        throw new Error(result.error)
       }
 
-      setUser(newUser)
-      localStorage.setItem('skincare-user', JSON.stringify(newUser))
+      if (!result?.ok) {
+        throw new Error('Auto-login after signup failed')
+      }
     } catch (error) {
       console.error('Signup failed:', error)
       throw error
@@ -128,8 +126,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     setUser(null)
-    localStorage.removeItem('skincare-user')
-    localStorage.removeItem('auth-token')
     signOut()
   }
 

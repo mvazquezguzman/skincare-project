@@ -1,19 +1,35 @@
 import { NextRequest, NextResponse } from "next/server"
-import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/prisma"
-import { z } from "zod"
-
-const signupSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-})
+import bcrypt from "bcryptjs"
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { firstName, lastName, email, password } = signupSchema.parse(body)
+    const { firstName, lastName, email, password } = await request.json()
+
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password) {
+      return NextResponse.json(
+        { error: "All fields are required" },
+        { status: 400 }
+      )
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: "Invalid email format" },
+        { status: 400 }
+      )
+    }
+
+    // Validate password strength
+    if (password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters long" },
+        { status: 400 }
+      )
+    }
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -23,7 +39,7 @@ export async function POST(request: NextRequest) {
     if (existingUser) {
       return NextResponse.json(
         { error: "User with this email already exists" },
-        { status: 400 }
+        { status: 409 }
       )
     }
 
@@ -37,28 +53,33 @@ export async function POST(request: NextRequest) {
         lastName,
         email,
         password: hashedPassword,
-        avatar: "/placeholder-user.jpg"
+        emailVerified: false
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        avatar: true,
+        createdAt: true
       }
     })
-
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user
 
     return NextResponse.json(
       { 
         message: "User created successfully",
-        user: userWithoutPassword 
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          avatar: user.avatar
+        }
       },
       { status: 201 }
     )
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: "Invalid input data", details: error.errors },
-        { status: 400 }
-      )
-    }
 
+  } catch (error) {
     console.error("Signup error:", error)
     return NextResponse.json(
       { error: "Internal server error" },

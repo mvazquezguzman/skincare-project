@@ -335,7 +335,7 @@ export default function DiaryPage() {
                                         })
                                       }
                                       className={`w-6 h-6 rounded-full border-2 ${
-                                        newEntry.skinCondition?.[aspect as keyof typeof newEntry.skinCondition] >=
+                                        (newEntry.skinCondition?.[aspect as keyof typeof newEntry.skinCondition] ?? 0) >=
                                         rating
                                           ? "bg-primary border-primary"
                                           : "border-muted-foreground"

@@ -29,6 +29,7 @@ export function Navigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const { user, isAuthenticated, logout } = useAuth()
 
+
   const navItems = [
     { href: "/ingredient-search", label: "Ingredient Search", icon: MagnifyingGlassIcon },
     { href: "/ingredient-chart", label: "Ingredient Chart", icon: ShieldCheckIcon },
@@ -60,7 +61,7 @@ export function Navigation() {
           </div>
 
           {/* Auth Section */}
-          {isAuthenticated && (
+          {isAuthenticated ? (
             <div className="hidden md:flex items-center space-x-4">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -68,7 +69,7 @@ export function Navigation() {
                     className="flex items-center space-x-1 text-primary-foreground hover:bg-primary-foreground/10 px-3 py-2 rounded-md transition-colors"
                   >
                     <span className="font-open-sans text-sm">
-                      Hi, {user?.firstName}
+                      Hi, {user?.firstName || 'User'}
                     </span>
                     <ChevronDownIcon className="h-4 w-4" />
                   </button>
@@ -100,6 +101,12 @@ export function Navigation() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+          ) : (
+            <div className="hidden md:flex items-center space-x-4">
+              <span className="text-primary-foreground/60 text-sm font-open-sans">
+                Not logged in
+              </span>
+            </div>
           )}
 
           {/* Mobile menu button */}
@@ -127,9 +134,12 @@ export function Navigation() {
               ))}
               
               {/* Mobile Auth Section */}
-              {isAuthenticated && (
+              {isAuthenticated ? (
                 <div className="pt-4 border-t border-border">
                   <div className="space-y-3">
+                    <div className="text-sm text-muted-foreground mb-2">
+                      Logged in as: {user?.firstName || 'User'}
+                    </div>
                     <Link href="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center space-x-2 py-2">
                       <UserCircleIcon className="h-5 w-5" />
                       <span className="font-open-sans">Profile</span>
@@ -153,6 +163,12 @@ export function Navigation() {
                       <ArrowRightOnRectangleIcon className="mr-2 h-4 w-4" />
                       Log out
                     </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-4 border-t border-border">
+                  <div className="text-sm text-muted-foreground">
+                    Not logged in
                   </div>
                 </div>
               )}

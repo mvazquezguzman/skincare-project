@@ -1,12 +1,9 @@
 import { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
-import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import { prisma } from "./prisma"
 import bcrypt from "bcryptjs"
-import { JWT } from "next-auth/jwt"
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
   providers: [
     CredentialsProvider({
       name: "credentials",
@@ -19,54 +16,63 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email
+        try {
+          const user = await prisma.user.findUnique({
+            where: {
+              email: credentials.email
+            }
+          })
+
+          if (!user || !user.password) {
+            return null
           }
-        })
 
-        if (!user || !user.password) {
+          const isPasswordValid = await bcrypt.compare(
+            credentials.password,
+            user.password
+          )
+
+          if (!isPasswordValid) {
+            return null
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: `${user.firstName} ${user.lastName}`,
+            image: user.avatar || undefined,
+          }
+        } catch (error) {
+          console.error("Authorization error:", error)
           return null
-        }
-
-        const isPasswordValid = await bcrypt.compare(
-          credentials.password,
-          user.password
-        )
-
-        if (!isPasswordValid) {
-          return null
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          image: user.avatar,
         }
       }
     })
   ],
   callbacks: {
-    async session({ session, user, token }) {
-      if (session.user) {
-        session.user.id = user?.id || token?.sub || ""
+    async session({ session, token }) {
+      if (session.user && token) {
+        session.user.id = token.sub || ""
       }
       return session
     },
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id
+        token.sub = user.id
       }
       return token
     },
   },
   pages: {
-    signIn: "/auth/login",
-    signUp: "/auth/signup",
+    signIn: "/",
   },
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+  jwt: {
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === "development",
 }
