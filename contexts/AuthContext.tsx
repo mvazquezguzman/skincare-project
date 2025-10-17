@@ -13,6 +13,9 @@ export interface User {
   skinConcerns?: any
   skinGoals?: any
   allergies?: any
+  makeupUsage?: string
+  sunscreenPreference?: string
+  ingredientPreferences?: any
   quizCompleted?: boolean
   quizCompletedAt?: string
 }
@@ -125,6 +128,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             skinConcerns: profile?.skin_concerns,
             skinGoals: profile?.skin_goals,
             allergies: profile?.allergies,
+            makeupUsage: profile?.makeup_usage,
+            sunscreenPreference: profile?.sunscreen_preference,
+            ingredientPreferences: profile?.ingredient_preferences,
             quizCompleted: profile?.quiz_completed || false,
             quizCompletedAt: profile?.quiz_completed_at
           }

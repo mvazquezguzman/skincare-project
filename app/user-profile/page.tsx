@@ -116,11 +116,26 @@ export default function ProfilePage() {
           skinType: dbProfile.skin_type as UserProfile["skinType"] || null,
           skinConcerns: dbProfile.skin_concerns ? (Array.isArray(dbProfile.skin_concerns) ? dbProfile.skin_concerns : JSON.parse(dbProfile.skin_concerns)) : [],
           skinGoals: dbProfile.skin_goals ? (Array.isArray(dbProfile.skin_goals) ? dbProfile.skin_goals : JSON.parse(dbProfile.skin_goals)) : [],
-          allergies: dbProfile.allergies ? (Array.isArray(dbProfile.allergies) ? dbProfile.allergies : JSON.parse(dbProfile.allergies)) : [],
+          allergies: dbProfile.ingredient_preferences ? (Array.isArray(dbProfile.ingredient_preferences) ? dbProfile.ingredient_preferences : JSON.parse(dbProfile.ingredient_preferences)) : [],
           currentRoutine: {
             morning: [],
             evening: []
           }
+        }
+
+        // Check for extra quiz data in localStorage
+        try {
+          const extraData = localStorage.getItem('skinwise-quiz-extra-data')
+          if (extraData) {
+            const parsedExtraData = JSON.parse(extraData)
+            // Add extra data to allergies (ingredient preferences)
+            if (parsedExtraData.ingredientPreferences && parsedExtraData.ingredientPreferences.length > 0) {
+              userProfile.allergies = [...userProfile.allergies, ...parsedExtraData.ingredientPreferences]
+            }
+            console.log('Loaded extra quiz data from localStorage:', parsedExtraData)
+          }
+        } catch (error) {
+          console.log('No extra quiz data found in localStorage')
         }
         
         // Save to localStorage for offline access
@@ -417,7 +432,7 @@ export default function ProfilePage() {
                       </div>
                     )}
 
-                    {/* Allergies/Preferences */}
+                    {/* Ingredient Preferences */}
                     {profile.allergies && profile.allergies.length > 0 && (
                       <div>
                         <p className="text-sm font-medium text-foreground mb-2">

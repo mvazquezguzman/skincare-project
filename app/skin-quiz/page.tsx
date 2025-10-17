@@ -53,23 +53,70 @@ const SkinQuiz = () => {
       setIsSaving(true)
       try {
         if (isAuthenticated && user) {
-          // Map quiz results to database fields
-          const updateData = {
+          // Map quiz results to database fields - start with basic fields
+          const updateData: any = {
             skin_type: skinProfile.skinFeel,
             skin_concerns: skinProfile.topConcerns || [],
             skin_goals: [], // Could be derived from concerns or added as separate step
-            allergies: skinProfile.ingredientPreferences || [],
-            quiz_completed: true,
-            quiz_completed_at: new Date().toISOString(),
+            allergies: [], // Keep separate from ingredient preferences
             updated_at: new Date().toISOString()
           }
 
-          const { error } = await supabase
+          // Add quiz completion fields if they exist
+          updateData.quiz_completed = true
+          updateData.quiz_completed_at = new Date().toISOString()
+
+          // Add new fields if they exist in the database
+          if (skinProfile.makeupUsage) {
+            updateData.makeup_usage = skinProfile.makeupUsage
+          }
+          if (skinProfile.sunscreenPreference) {
+            updateData.sunscreen_preference = skinProfile.sunscreenPreference
+          }
+          if (skinProfile.ingredientPreferences && skinProfile.ingredientPreferences.length > 0) {
+            updateData.ingredient_preferences = skinProfile.ingredientPreferences
+          }
+
+          // Try to save with all fields first
+          let { error } = await supabase
             .from('users')
             .update(updateData)
             .eq('id', user.id)
 
-          if (error) {
+          // If that fails, try saving without the new fields
+          if (error && (error.code === 'PGRST116' || error.message.includes('column') || error.message.includes('does not exist'))) {
+            console.log('New columns not found, trying with basic fields only...')
+            
+            const basicUpdateData = {
+              skin_type: skinProfile.skinFeel,
+              skin_concerns: skinProfile.topConcerns || [],
+              skin_goals: [],
+              allergies: [],
+              updated_at: new Date().toISOString()
+            }
+
+            const { error: basicError } = await supabase
+              .from('users')
+              .update(basicUpdateData)
+              .eq('id', user.id)
+
+            if (basicError) {
+              console.error('Error saving basic quiz results:', basicError)
+              // Fallback to localStorage if database save fails
+              localStorage.setItem('skinwise-quiz-results', JSON.stringify(skinProfile))
+            } else {
+              console.log('Basic quiz results saved to database successfully')
+              setSaveSuccess(true)
+              // Save additional data to localStorage as fallback
+              localStorage.setItem('skinwise-quiz-extra-data', JSON.stringify({
+                makeupUsage: skinProfile.makeupUsage,
+                sunscreenPreference: skinProfile.sunscreenPreference,
+                ingredientPreferences: skinProfile.ingredientPreferences
+              }))
+              // Clear old localStorage if it exists
+              localStorage.removeItem('skinwise-quiz-results')
+            }
+          } else if (error) {
             console.error('Error saving quiz results:', error)
             // Fallback to localStorage if database save fails
             localStorage.setItem('skinwise-quiz-results', JSON.stringify(skinProfile))
@@ -111,9 +158,9 @@ const SkinQuiz = () => {
               <p className="text-sm text-muted-foreground">
                 <strong>Your personalized skincare profile is ready!</strong> 
                 {saveSuccess && isAuthenticated ? (
-                  <span className="text-green-600 font-medium"> Your results have been saved to your profile.</span>
+                  <span className="text-green-600 font-medium"> Your results have been automatically saved to your profile.</span>
                 ) : (
-                  " Save your results to your profile to access dermatologist-developed recommendations and track your progress."
+                  " Click 'Save to My Profile' to save your results and access dermatologist-developed recommendations and track your progress."
                 )}
               </p>
             </div>
@@ -175,8 +222,113 @@ const SkinQuiz = () => {
           </div>
 
           <div className="text-center space-x-4">
-            <Button asChild size="lg" className="font-sans">
-              <Link href="/user-profile">Save to My Profile</Link>
+            <Button 
+              size="lg" 
+              className="font-sans"
+              onClick={async () => {
+                if (isAuthenticated && user) {
+                  setIsSaving(true)
+                  try {
+                    // First, let's try to save only the basic fields that we know exist
+                    const updateData: any = {
+                      skin_type: skinProfile.skinFeel,
+                      skin_concerns: skinProfile.topConcerns || [],
+                      skin_goals: [], // Could be derived from concerns or added as separate step
+                      allergies: [], // Keep separate from ingredient preferences
+                      updated_at: new Date().toISOString()
+                    }
+
+                    // Add quiz completion fields if they exist
+                    updateData.quiz_completed = true
+                    updateData.quiz_completed_at = new Date().toISOString()
+
+                    // Try to add the new fields if they exist
+                    if (skinProfile.makeupUsage) {
+                      updateData.makeup_usage = skinProfile.makeupUsage
+                    }
+                    if (skinProfile.sunscreenPreference) {
+                      updateData.sunscreen_preference = skinProfile.sunscreenPreference
+                    }
+                    if (skinProfile.ingredientPreferences && skinProfile.ingredientPreferences.length > 0) {
+                      updateData.ingredient_preferences = skinProfile.ingredientPreferences
+                    }
+
+                    // Try to save with all fields first
+                    let { error } = await supabase
+                      .from('users')
+                      .update(updateData)
+                      .eq('id', user.id)
+
+                    // If that fails, try saving without the new fields
+                    if (error && (error.code === 'PGRST116' || error.message.includes('column') || error.message.includes('does not exist'))) {
+                      console.log('New columns not found, trying with basic fields only...')
+                      
+                      const basicUpdateData = {
+                        skin_type: skinProfile.skinFeel,
+                        skin_concerns: skinProfile.topConcerns || [],
+                        skin_goals: [],
+                        allergies: [],
+                        updated_at: new Date().toISOString()
+                      }
+
+                      const { error: basicError } = await supabase
+                        .from('users')
+                        .update(basicUpdateData)
+                        .eq('id', user.id)
+
+                      if (basicError) {
+                        console.error('Error saving basic quiz results:', basicError)
+                        alert(`Failed to save to profile: ${basicError.message}. Please try again.`)
+                      } else {
+                        console.log('Basic quiz results saved successfully')
+                        setSaveSuccess(true)
+                        // Save additional data to localStorage as fallback
+                        localStorage.setItem('skinwise-quiz-extra-data', JSON.stringify({
+                          makeupUsage: skinProfile.makeupUsage,
+                          sunscreenPreference: skinProfile.sunscreenPreference,
+                          ingredientPreferences: skinProfile.ingredientPreferences
+                        }))
+                        router.push('/user-profile')
+                      }
+                    } else if (error) {
+                      console.error('Error saving quiz results:', error)
+                      console.error('Error details:', {
+                        message: error.message,
+                        details: error.details,
+                        hint: error.hint,
+                        code: error.code
+                      })
+                      alert(`Failed to save to profile: ${error.message}. Please try again.`)
+                    } else {
+                      console.log('Quiz results saved to database successfully')
+                      setSaveSuccess(true)
+                      // Navigate to profile page after successful save
+                      router.push('/user-profile')
+                    }
+                  } catch (error) {
+                    console.error('Error saving quiz results:', error)
+                    alert('Failed to save to profile. Please try again.')
+                  } finally {
+                    setIsSaving(false)
+                  }
+                } else {
+                  // User not authenticated, redirect to sign in
+                  router.push('/auth/signin')
+                }
+              }}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <CheckCircleIcon className="mr-2 h-4 w-4" />
+                  Save to My Profile
+                </>
+              )}
             </Button>
             <Button asChild size="lg" variant="outline" className="font-sans">
               <Link href="/skin-routine">Create My Routine</Link>
