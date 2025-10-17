@@ -1,7 +1,6 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Navigation } from "@/components/navigation"
 import {
   CheckCircleIcon,
   XCircleIcon,
@@ -162,7 +161,6 @@ export default function IngredientChartPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">

@@ -1,342 +1,279 @@
 "use client"
 
-import { Navigation } from "@/components/navigation"
+import Link from "next/link"
+import Image from "next/image"
+
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel"
 import {
   BeakerIcon,
   ShieldCheckIcon,
   CalendarIcon,
   BookOpenIcon,
-  SparklesIcon,
+  MagnifyingGlassIcon,
+  AcademicCapIcon,
+  ArrowRightIcon,
+  HeartIcon,
 } from "@heroicons/react/24/outline"
-import { useAuth } from "@/contexts/AuthContext"
-import { useState } from "react"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline"
-import { WelcomeMessage } from "@/components/WelcomeMessage"
 
 export default function HomePage() {
-  const { user, isAuthenticated, signup, login, isLoading } = useAuth()
-  const [showPassword, setShowPassword] = useState(false)
-  const [isLoginMode, setIsLoginMode] = useState(false)
-  const [signupData, setSignupData] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    password: "",
-    confirmPassword: ""
-  })
-  const [loginData, setLoginData] = useState({
-    email: "",
-    password: ""
-  })
-  const [error, setError] = useState("")
-
-  const handleSignupSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError("")
-    
-    if (signupData.password !== signupData.confirmPassword) {
-      setError("Passwords don't match")
-      return
-    }
-    
-    if (signupData.password.length < 6) {
-      setError("Password must be at least 6 characters long")
-      return
-    }
-    
-    try {
-      await signup({
-        firstName: signupData.firstName,
-        lastName: signupData.lastName,
-        email: signupData.email,
-        password: signupData.password
-      })
-      // Reset form after successful signup
-      setSignupData({
-        firstName: "",
-        lastName: "",
-        email: "",
-        password: "",
-        confirmPassword: ""
-      })
-    } catch (err: any) {
-      setError(err.message || "Failed to create account. Please try again.")
-    }
-  }
-
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError("")
-    
-    try {
-      await login(loginData.email, loginData.password)
-      // Reset form after successful login
-      setLoginData({
-        email: "",
-        password: ""
-      })
-    } catch (err: any) {
-      setError(err.message || "Invalid email or password. Please try again.")
-    }
-  }
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isLoginMode) {
-      setLoginData(prev => ({
-        ...prev,
-        [e.target.name]: e.target.value
-      }))
-    } else {
-      setSignupData(prev => ({
-        ...prev,
-        [e.target.name]: e.target.value
-      }))
-    }
-  }
-
-  const toggleMode = () => {
-    setIsLoginMode(!isLoginMode)
-    setError("")
-    setSignupData({
-      firstName: "",
-      lastName: "",
-      email: "",
-      password: "",
-      confirmPassword: ""
-    })
-    setLoginData({
-      email: "",
-      password: ""
-    })
-  }
-  
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
-
-      {/* Hero Section */}
-      <section className="relative py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
-          {isAuthenticated ? (
-            /* Welcome Message for Logged-in Users */
-            <div className="text-center">
-              <WelcomeMessage user={user} />
-            </div>
-          ) : (
-            /* About and Login/Signup Layout for Guest Users */
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
-              {/* About Section - Left Side */}
-              <div className="space-y-6">
-                <div className="flex items-center space-x-3 mb-6">
-                  <SparklesIcon className="h-12 w-12 text-primary" />
-                  <h1 className="font-montserrat font-black text-3xl md:text-4xl text-foreground">
-                    SkinWise
-                  </h1>
-                </div>
-                <h2 className="font-montserrat font-bold text-2xl md:text-3xl text-foreground">
-                  Your Skincare Journey Starts with Safe Ingredients
-                </h2>
-                <p className="font-open-sans text-lg text-muted-foreground leading-relaxed">
-                  Discover the science behind skincare ingredients, build personalized routines, 
-                  and track your progress with our comprehensive ingredient library and 
-                  compatibility checker.
-                </p>
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3">
-                    <BeakerIcon className="h-5 w-5 text-primary" />
-                    <span className="font-open-sans text-foreground">Comprehensive Ingredient Database</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <ShieldCheckIcon className="h-5 w-5 text-primary" />
-                    <span className="font-open-sans text-foreground">Safety and Compatibility Checker</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <CalendarIcon className="h-5 w-5 text-primary" />
-                    <span className="font-open-sans text-foreground">Personalized Routine Builder</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <BookOpenIcon className="h-5 w-5 text-primary" />
-                    <span className="font-open-sans text-foreground">Skincare Diary and Progress Tracking</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Auth Form Section - Right Side */}
-              <div className="bg-card border border-border rounded-lg p-8 shadow-lg">
-                <div className="text-center mb-6">
-                  <h3 className="font-montserrat font-bold text-2xl text-foreground mb-2">
-                    {isLoginMode ? "Welcome Back" : "Get Started Today"}
-                  </h3>
-                  <p className="font-open-sans text-muted-foreground">
-                    {isLoginMode 
-                      ? "Sign in to continue your skincare journey" 
-                      : "Join Now to Start Your Skincare Journey!"
-                    }
-                  </p>
-                </div>
-
-                {/* Toggle Buttons */}
-                <div className="flex bg-muted rounded-lg p-1 mb-6">
-                  <button
-                    type="button"
-                    onClick={() => setIsLoginMode(false)}
-                    className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                      !isLoginMode
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Sign Up
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsLoginMode(true)}
-                    className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                      isLoginMode
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Sign In
-                  </button>
-                </div>
-
-                {/* Auth Form */}
-                <form onSubmit={isLoginMode ? handleLoginSubmit : handleSignupSubmit} className="space-y-4">
-                  {error && (
-                    <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-                      {error}
-                    </div>
-                  )}
-                  
-                  {!isLoginMode && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="firstName" className="font-open-sans font-medium">First Name</Label>
-                        <Input
-                          id="firstName"
-                          name="firstName"
-                          type="text"
-                          placeholder="First name"
-                          value={signupData.firstName}
-                          onChange={handleInputChange}
-                          required
-                          className="font-open-sans"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="lastName" className="font-open-sans font-medium">Last Name</Label>
-                        <Input
-                          id="lastName"
-                          name="lastName"
-                          type="text"
-                          placeholder="Last name"
-                          value={signupData.lastName}
-                          onChange={handleInputChange}
-                          required
-                          className="font-open-sans"
-                        />
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="email" className="font-open-sans font-medium">
-                      Email
-                    </Label>
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={isLoginMode ? loginData.email : signupData.email}
-                      onChange={handleInputChange}
-                      required
-                      className="font-open-sans"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="password" className="font-open-sans font-medium">
-                      Password
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="password"
-                        name="password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder={isLoginMode ? "Enter your password" : "Create a password"}
-                        value={isLoginMode ? loginData.password : signupData.password}
-                        onChange={handleInputChange}
-                        required
-                        className="font-open-sans pr-10"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? (
-                          <EyeSlashIcon className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <EyeIcon className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {!isLoginMode && (
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmPassword" className="font-open-sans font-medium">
-                        Confirm Password
-                      </Label>
-                      <Input
-                        id="confirmPassword"
-                        name="confirmPassword"
-                        type="password"
-                        placeholder="Confirm your password"
-                        value={signupData.confirmPassword}
-                        onChange={handleInputChange}
-                        required
-                        className="font-open-sans"
-                      />
-                    </div>
-                  )}
-
-                  <Button 
-                    type="submit" 
-                    className="w-full font-open-sans font-medium" 
-                    disabled={isLoading}
-                  >
-                    {isLoading 
-                      ? (isLoginMode ? "Signing In..." : "Creating Account...") 
-                      : (isLoginMode ? "Sign In" : "Create Account")
-                    }
-                  </Button>
-                </form>
-
-                <div className="mt-6 pt-6 border-t border-border">
-                  <p className="font-open-sans text-sm text-muted-foreground text-center">
-                    {isLoginMode ? "Don't have an account? " : "Already have an account? "}
-                    <button
-                      type="button"
-                      onClick={toggleMode}
-                      className="text-primary hover:text-primary/80 font-medium"
-                    >
-                      {isLoginMode ? "Sign up here" : "Sign in here"}
-                    </button>
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
+      <GuestLandingPage />
     </div>
+  )
+}
+
+function GuestLandingPage() {
+  return (
+    <>
+      <HeroSection />
+      <SkinQuizSection />
+      <FeaturesSection />
+      <FinalCTASection />
+    </>
+  )
+}
+
+// Hero Section Component
+function HeroSection() {
+  return (
+    <section className="min-h-screen flex items-center justify-center bg-background">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+        <div className="grid lg:grid-cols-2 gap-16 items-center">
+          {/* Left Content - Title */}
+          <div className="text-center lg:text-left space-y-8">
+            <h1 className="font-sans font-black text-6xl md:text-7xl lg:text-8xl text-foreground leading-tight">3-Step Routine <br />
+              <span className="block text-5xl md:text-6xl lg:text-7xl font-bold">Made for You</span>
+            </h1>
+            <p className="font-sans text-xl text-muted-foreground leading-relaxed">
+              Clinically personalized skincare for<br />
+              <span className="font-semibold">dryness + sensitivity</span>
+            </p>
+            <div className="pt-4">
+              <Button asChild size="lg" className="font-sans text-lg px-8 py-6">
+                <Link href="/auth/signup">Get Started</Link>
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Content - Product Carousel */}
+          <div className="relative">
+            <Carousel className="w-full max-w-md mx-auto">
+              <CarouselContent>
+                <CarouselItem>
+                  <div className="bg-card border border-border rounded-lg p-8 shadow-lg h-[28rem] flex flex-col justify-center">
+                    <div className="space-y-6">
+                      <div className="w-50 h-64 mx-auto rounded-lg overflow-hidden bg-muted">
+                        <Image 
+                          src="/placeholder.jpg" 
+                          alt="Personalized Cleanser" 
+                          width={200}
+                          height={200}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            console.log('Image failed to load:', e);
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                      <div className="text-center">
+                        <h3 className="font-sans font-bold text-2xl text-foreground">Personalized Cleanser</h3>
+                      </div>
+                    </div>
+                  </div>
+                </CarouselItem>
+                <CarouselItem>
+                  <div className="bg-card border border-border rounded-lg p-8 shadow-lg h-[28rem] flex flex-col justify-center">
+                    <div className="space-y-6">
+                      <div className="w-50 h-64 mx-auto rounded-lg overflow-hidden bg-muted">
+                        <Image 
+                          src="/placeholder.jpg" 
+                          alt="Personalized Treatment" 
+                          width={200}
+                          height={200}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            console.log('Image failed to load:', e);
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                      <div className="text-center">
+                        <h3 className="font-sans font-bold text-2xl text-foreground">Personalized Treatment</h3>
+                      </div>
+                    </div>
+                  </div>
+                </CarouselItem>
+                <CarouselItem>
+                  <div className="bg-card border border-border rounded-lg p-8 shadow-lg h-[28rem] flex flex-col justify-center">
+                    <div className="space-y-6">
+                      <div className="w-50 h-64 mx-auto rounded-lg overflow-hidden bg-muted">
+                        <Image 
+                          src="/placeholder.jpg" 
+                          alt="Personalized Moisturizer" 
+                          width={200}
+                          height={200}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            console.log('Image failed to load:', e);
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                      <div className="text-center">
+                        <h3 className="font-sans font-bold text-2xl text-foreground">Personalized Moisturizer</h3>
+                      </div>
+                    </div>
+                  </div>
+                </CarouselItem>
+              </CarouselContent>
+              <CarouselPrevious />
+              <CarouselNext />
+            </Carousel>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SkinQuizSection() {
+  return (
+    <section className="py-16 px-4 sm:px-6 lg:px-8 bg-muted/30">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center space-y-8">
+          <div className="space-y-4">
+            <h2 className="font-sans font-bold text-3xl md:text-4xl text-foreground"> Take Our Skin Quiz </h2>
+            <p className="font-sans text-lg text-muted-foreground max-w-2xl mx-auto"> Answer a few questions about your skin and get personalized recommendations in just a few minutes. </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            <QuizStepCard 
+              icon={AcademicCapIcon}
+              title="Quick Assessment"
+              description="Simple questions about your skin type and concerns"
+            />
+            <QuizStepCard 
+              icon={CalendarIcon}
+              title="Custom Routine"
+              description="Get your personalized skincare routine and ingredient guide"
+            />
+            <QuizStepCard 
+              icon={MagnifyingGlassIcon}
+              title="Product Analysis"
+              description="Analyzes skincare products to find the best ones for your skin"
+            />
+          </div>
+
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function QuizStepCard({ 
+  icon: Icon, 
+  title, 
+  description 
+}: { 
+  icon: any
+  title: string
+  description: string 
+}) {
+  return (
+    <Card className="text-center p-6">
+      <CardContent className="space-y-4">
+        <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+          <Icon className="h-6 w-6 text-primary" />
+        </div>
+        <h3 className="font-sans font-bold text-lg">{title}</h3>
+        <p className="font-sans text-sm text-muted-foreground">{description}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function FeaturesSection() {
+  const features = [
+    {
+      icon: BeakerIcon,
+      title: "Science-Based",
+      description: "Ingredients backed by clinical research and dermatologist recommendations"
+    },
+    {
+      icon: ShieldCheckIcon,
+      title: "Safe & Effective",
+      description: "All ingredients are tested for safety and compatibility with your skin type"
+    },
+    {
+      icon: BookOpenIcon,
+      title: "Track Progress",
+      description: "Monitor your skin's improvement with our built-in progress tracking"
+    },
+    {
+      icon: HeartIcon,
+      title: "Personalized",
+      description: "Every routine is tailored specifically to your skin's unique needs"
+    }
+  ]
+
+  return (
+    <section className="py-16 px-4 sm:px-6 lg:px-8 bg-muted/50">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center space-y-12">
+          <div className="space-y-4">
+            <h2 className="font-sans font-bold text-3xl md:text-4xl text-foreground"> Why Choose SkinWise? </h2>
+            <p className="font-sans text-lg text-muted-foreground max-w-2xl mx-auto"> Science-backed ingredients, personalized routines, and proven results. </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {features.map((feature, index) => (
+              <FeatureCard 
+                key={index}
+                icon={feature.icon}
+                title={feature.title}
+                description={feature.description}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FeatureCard({ 
+  icon: Icon, 
+  title, 
+  description 
+}: { 
+  icon: any
+  title: string
+  description: string 
+}) {
+  return (
+    <div className="text-center space-y-4">
+      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+        <Icon className="h-8 w-8 text-primary" />
+      </div>
+      <h3 className="font-sans font-bold text-xl">{title}</h3>
+      <p className="font-sans text-muted-foreground"> {description} </p>
+    </div>
+  )
+}
+
+function FinalCTASection() {
+  return (
+    <section className="py-16 px-4 sm:px-6 lg:px-8 bg-primary text-primary-foreground">
+      <div className="max-w-4xl mx-auto text-center space-y-8">
+        <div className="space-y-4">
+          <h2 className="font-sans font-bold text-3xl md:text-4xl"> Ready to Transform Your Skin? </h2>
+          <p className="font-sans text-lg opacity-90"> Join now to discover your perfect skincare routine </p>
+        </div>
+
+      </div>
+    </section>
   )
 }

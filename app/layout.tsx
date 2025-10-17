@@ -1,26 +1,18 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Montserrat } from "next/font/google"
-import { Open_Sans } from "next/font/google"
+import { Josefin_Sans } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
-import { SessionProvider } from "@/components/SessionProvider"
 import { AuthProvider } from "@/contexts/AuthContext"
+import Navbar from "@/components/Navbar"
 import "./globals.css"
 
-/* Added Montserrat for headings and Open Sans for body text per design brief */
-const montserrat = Montserrat({
+/* Josefin Sans for all text */
+const josefinSans = Josefin_Sans({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-montserrat",
-  weight: ["400", "600", "700", "900"],
-})
-
-const openSans = Open_Sans({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-open-sans",
-  weight: ["400", "500", "600"],
+  variable: "--font-josefin-sans",
+  weight: ["300", "400", "500", "600", "700"],
 })
 
 export const metadata: Metadata = {
@@ -37,13 +29,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`font-sans ${montserrat.variable} ${openSans.variable} antialiased`}>
-        <SessionProvider>
-          <AuthProvider>
-            <Suspense fallback={null}>{children}</Suspense>
-            <Analytics />
-          </AuthProvider>
-        </SessionProvider>
+      <body className={`font-sans ${josefinSans.variable} antialiased`}>
+        <AuthProvider>
+          <Navbar />
+          <Suspense fallback={null}>{children}</Suspense>
+          <Analytics />
+        </AuthProvider>
       </body>
     </html>
   )

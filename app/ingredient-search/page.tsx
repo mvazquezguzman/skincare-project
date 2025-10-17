@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Navigation } from "@/components/navigation"
 import {
   MagnifyingGlassIcon,
   CheckCircleIcon,
@@ -185,7 +184,6 @@ export default function IngredientSearchPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
