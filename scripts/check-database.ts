@@ -1,17 +1,21 @@
 #!/usr/bin/env tsx
 
 /**
- * Database Health Checker (TypeScript version)
- * Checks if Supabase database is running and accessible
+ * Database Health Checker
+ * 
+ * Description:
+ *   Comprehensive health check for Supabase database connection and services.
+ *   Verifies environment variables, connection, authentication, and table access.
+ * 
+ * Usage:
+ *   npx tsx scripts/check-database.ts
  */
 
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 
-// Load environment variables
 dotenv.config({ path: '.env.local' });
 
-// Colors for console output
 const colors = {
   green: '\x1b[32m',
   red: '\x1b[31m',
@@ -58,7 +62,6 @@ async function checkDatabase(): Promise<void> {
     process.exit(1);
   }
 
-  // Initialize Supabase client
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   // Check 2: Basic Connection
@@ -142,7 +145,6 @@ async function checkDatabase(): Promise<void> {
     checks.push({ name: 'Database Health', passed: true }); // Don't fail on this
   }
 
-  // Summary
   log('');
   log('📊 Health Check Summary:', 'bold');
   log('========================', 'bold');
@@ -163,7 +165,6 @@ async function checkDatabase(): Promise<void> {
   }
 }
 
-// Run the check
 checkDatabase().catch(err => {
   const errorMessage = err instanceof Error ? err.message : 'Unknown error';
   log(`💥 Unexpected error: ${errorMessage}`, 'red');

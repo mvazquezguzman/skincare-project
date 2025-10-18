@@ -18,7 +18,6 @@ export default function Navbar() {
     router.push("/")
   }
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -39,9 +38,7 @@ export default function Navbar() {
           {/* Logo/Brand */}
           <Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
             <SparklesIcon className="h-10 w-10 text-primary-foreground" />
-            <span className="font-sans font-black text-3xl text-primary-foreground">
-              SkinWise
-            </span>
+            <span className="font-sans font-black text-3xl text-primary-foreground">SkinWise</span>
           </Link>
 
           {/* Navigation Links */}
@@ -56,6 +53,9 @@ export default function Navbar() {
                 </Button>
                 <Button asChild variant="ghost" size="default" className="font-sans text-base text-primary-foreground hover:text-primary-foreground/80">
                   <Link href="/user-diary">Diary</Link>
+                </Button>
+                <Button asChild variant="ghost" size="default" className="font-sans text-base text-primary-foreground hover:text-primary-foreground/80">
+                  <Link href="/skincare-products">Products</Link>
                 </Button>
               </>
             )}
@@ -105,9 +105,7 @@ export default function Navbar() {
           <div className="flex items-center space-x-4">
             {isAuthenticated ? (
               <div className="flex items-center space-x-4">
-                <span className="text-base text-primary-foreground">
-                  Welcome, {user?.firstName || user?.email}
-                </span>
+                <span className="text-base text-primary-foreground">Welcome, {user?.firstName || user?.email}</span>
                 <Button
                   variant="outline"
                   size="default"

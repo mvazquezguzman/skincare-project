@@ -41,20 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
     const getInitialSession = async () => {
       try {
-        console.log('AuthContext: Getting initial session...')
-        
-        // First try to get the session
         const { data: { session }, error } = await supabase.auth.getSession()
-        
-        console.log('AuthContext: Session data:', { 
-          hasSession: !!session, 
-          hasUser: !!session?.user, 
-          userId: session?.user?.id,
-          error: error?.message 
-        })
         
         if (error) {
           console.error('Error getting session:', error)
@@ -63,24 +52,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        // If no session, try to refresh the session
         let sessionToUse = session
         if (!session) {
-          console.log('AuthContext: No session found, attempting to refresh...')
           const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
           
           if (refreshError) {
-            console.log('AuthContext: Session refresh failed:', refreshError.message)
             setUser(null)
             setIsLoading(false)
             return
           }
           
           if (refreshedSession?.user) {
-            console.log('AuthContext: Session refreshed successfully')
             sessionToUse = refreshedSession
           } else {
-            console.log('AuthContext: No session after refresh')
             setUser(null)
             setIsLoading(false)
             return
@@ -88,8 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (sessionToUse?.user) {
-          console.log('AuthContext: User found, fetching profile...')
-          // Get user profile data
           const { data: profile, error: profileError } = await supabase
             .from('users')
             .select('*')
@@ -97,9 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .single()
 
           if (profileError) {
-            console.log('AuthContext: Profile not found, creating user record:', profileError.message)
-            
-            // Create user record if it doesn't exist
             const { error: insertError } = await supabase
               .from('users')
               .insert({
@@ -112,9 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               })
 
             if (insertError) {
-              console.log('AuthContext: Error creating user record:', insertError.message)
-            } else {
-              console.log('AuthContext: User record created successfully')
+              console.error('Error creating user record:', insertError)
             }
           }
 
@@ -123,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: sessionToUse.user.email || "",
             firstName: profile?.first_name || sessionToUse.user.user_metadata?.first_name || "",
             lastName: profile?.last_name || sessionToUse.user.user_metadata?.last_name || "",
-            avatar: profile?.avatar || '/placeholder-user.jpg',
+            avatar: profile?.avatar || '/placeholder.jpg',
             skinType: profile?.skin_type,
             skinConcerns: profile?.skin_concerns,
             skinGoals: profile?.skin_goals,
@@ -134,15 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             quizCompleted: profile?.quiz_completed || false,
             quizCompletedAt: profile?.quiz_completed_at
           }
-          console.log('AuthContext: Setting user data:', userData)
-          console.log('AuthContext: Quiz completion status:', {
-            quizCompleted: userData.quizCompleted,
-            quizCompletedAt: userData.quizCompletedAt,
-            profileQuizCompleted: profile?.quiz_completed
-          })
           setUser(userData)
         } else {
-          console.log('AuthContext: No session found')
           setUser(null)
         }
       } catch (error) {
@@ -155,14 +125,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     getInitialSession()
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('AuthContext: Auth state change:', { event, hasSession: !!session, hasUser: !!session?.user })
-        
         if (session?.user) {
-          console.log('AuthContext: User authenticated, fetching profile...')
-          // Get user profile data
           const { data: profile, error: profileError } = await supabase
             .from('users')
             .select('*')
@@ -170,9 +135,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .single()
 
           if (profileError) {
-            console.log('AuthContext: Profile not found in auth state change, creating user record:', profileError.message)
-            
-            // Create user record if it doesn't exist
             const { error: insertError } = await supabase
               .from('users')
               .insert({
@@ -185,9 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               })
 
             if (insertError) {
-              console.log('AuthContext: Error creating user record in auth state change:', insertError.message)
-            } else {
-              console.log('AuthContext: User record created successfully in auth state change')
+              console.error('Error creating user record in auth state change:', insertError)
             }
           }
 
@@ -196,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: session.user.email || "",
             firstName: profile?.first_name || session.user.user_metadata?.first_name || "",
             lastName: profile?.last_name || session.user.user_metadata?.last_name || "",
-            avatar: profile?.avatar || '/placeholder-user.jpg',
+            avatar: profile?.avatar || '/placeholder.jpg',
             skinType: profile?.skin_type,
             skinConcerns: profile?.skin_concerns,
             skinGoals: profile?.skin_goals,
@@ -204,15 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             quizCompleted: profile?.quiz_completed || false,
             quizCompletedAt: profile?.quiz_completed_at
           }
-          console.log('AuthContext: Setting user data from auth state change:', userData)
-          console.log('AuthContext: Quiz completion status (auth state change):', {
-            quizCompleted: userData.quizCompleted,
-            quizCompletedAt: userData.quizCompletedAt,
-            profileQuizCompleted: profile?.quiz_completed
-          })
           setUser(userData)
         } else {
-          console.log('AuthContext: No session in auth state change, clearing user')
           setUser(null)
         }
         setIsLoading(false)
@@ -225,8 +178,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     setIsLoading(true)
     try {
-      console.log('AuthContext: Attempting login for:', email)
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -236,11 +187,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('AuthContext: Login error:', error)
         throw new Error(error.message || 'Login failed')
       }
-
-      console.log('AuthContext: Login successful')
-      
-      // The auth state change listener will handle updating the user
-      // No need to manually set user here as it will be handled by onAuthStateChange
     } catch (error) {
       console.error('AuthContext: Login error:', error)
       throw error
@@ -257,8 +203,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }) => {
     setIsLoading(true)
     try {
-      console.log('AuthContext: Attempting signup for:', userData.email)
-      
       const { data, error } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
@@ -274,10 +218,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('AuthContext: Signup error:', error)
         throw new Error(error.message || 'Signup failed')
       }
-
-      console.log('AuthContext: Signup successful')
-      
-      // The session will be automatically updated by Supabase auth state change
     } catch (error) {
       console.error('Signup failed:', error)
       throw error
@@ -299,14 +239,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     isAuthenticated: !!user
   }
-
-  // Debug authentication state
-  console.log('AuthContext: Current state:', { 
-    hasUser: !!user, 
-    userId: user?.id, 
-    isAuthenticated: !!user,
-    isLoading 
-  })
 
   return (
     <AuthContext.Provider value={value}>

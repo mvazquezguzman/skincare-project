@@ -15,17 +15,13 @@ import { supabase } from "@/lib/supabase"
 import { 
   User, 
   Heart, 
-  Shield, 
-  Droplets, 
   Sun, 
   Moon, 
   Clock, 
-  CheckCircle,
   Plus,
   Edit3,
   Trash2,
-  Camera,
-  Upload
+  Camera
 } from "lucide-react"
 import Link from "next/link"
 
@@ -72,13 +68,7 @@ export default function ProfilePage() {
   const [newStep, setNewStep] = useState<Partial<RoutineStep>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Debug authentication state
-  console.log('ProfilePage: Auth state:', { 
-    isAuthenticated, 
-    isLoading, 
-    hasUser: !!user, 
-    userId: user?.id 
-  })
+  // Authentication state tracking
 
   // Add a state to track if we've given enough time for auth to load
   const [authCheckComplete, setAuthCheckComplete] = useState(false)
@@ -132,10 +122,10 @@ export default function ProfilePage() {
             if (parsedExtraData.ingredientPreferences && parsedExtraData.ingredientPreferences.length > 0) {
               userProfile.allergies = [...userProfile.allergies, ...parsedExtraData.ingredientPreferences]
             }
-            console.log('Loaded extra quiz data from localStorage:', parsedExtraData)
+            // Loaded extra quiz data from localStorage
           }
         } catch (error) {
-          console.log('No extra quiz data found in localStorage')
+          // No extra quiz data found in localStorage
         }
         
         // Save to localStorage for offline access

@@ -121,3 +121,6 @@ temp/
 *.njsproj
 *.sln
 *.sw?
+
+# Project specific
+my-v0-project@*

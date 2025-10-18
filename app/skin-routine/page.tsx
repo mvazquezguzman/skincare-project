@@ -15,7 +15,6 @@ import {
   CheckCircleIcon,
   ClockIcon,
   SparklesIcon,
-  ArrowRightIcon,
   ArrowLeftIcon,
   XMarkIcon,
   CalendarIcon,
