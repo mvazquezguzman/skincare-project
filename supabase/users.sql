@@ -13,6 +13,14 @@ CREATE TABLE users (
   skin_concerns JSONB,
   skin_goals JSONB,
   allergies JSONB,
+  ingredient_preferences JSONB,
+  
+  -- Quiz preferences
+  makeup_usage TEXT,
+  sunscreen_preference TEXT,
+  budget_range TEXT,
+  
+  -- Quiz completion tracking
   quiz_completed BOOLEAN DEFAULT FALSE,
   quiz_completed_at TIMESTAMP WITH TIME ZONE
 );
@@ -63,3 +71,16 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER handle_updated_at_users
   BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- Add column comments for documentation
+COMMENT ON TABLE users IS 'Users table with complete skin profile data from quiz';
+COMMENT ON COLUMN users.skin_type IS 'User skin type from quiz';
+COMMENT ON COLUMN users.skin_concerns IS 'User skin concerns from quiz (top 2 selected)';
+COMMENT ON COLUMN users.skin_goals IS 'User skin goals (can be derived from concerns or separate)';
+COMMENT ON COLUMN users.allergies IS 'User allergies (separate from ingredient preferences)';
+COMMENT ON COLUMN users.ingredient_preferences IS 'User ingredient preferences/allergies from quiz';
+COMMENT ON COLUMN users.makeup_usage IS 'User makeup usage preference from quiz';
+COMMENT ON COLUMN users.sunscreen_preference IS 'User sunscreen preference from quiz';
+COMMENT ON COLUMN users.budget_range IS 'User budget range preference from quiz (budget, moderate, premium, luxury, flexible)';
+COMMENT ON COLUMN users.quiz_completed IS 'Whether user has completed the skin quiz';
+COMMENT ON COLUMN users.quiz_completed_at IS 'Timestamp when user completed the skin quiz';
