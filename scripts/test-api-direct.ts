@@ -7,6 +7,13 @@
  *   Direct API testing script using axios to verify Sephora API connectivity
  *   and response format. Useful for debugging API issues and subscription status.
  * 
+ *   Use this script when:
+ *   - Debugging API connectivity issues
+ *   - Verifying RapidAPI subscription status
+ *   - Testing raw API responses
+ * 
+ *   For normal testing, use test-api.ts instead (uses service layer).
+ * 
  * Usage:
  *   npx tsx scripts/test-api-direct.ts
  */
@@ -28,7 +35,7 @@ async function testApiDirect() {
       categoryId: 'cat1080037'
     },
     headers: {
-      'x-rapidapi-key': process.env.RAPIDAPI_KEY || '205f886c27msh9c88e101cae9284p12baf1jsnbb23f9884b61',
+      'x-rapidapi-key': process.env.RAPIDAPI_KEY ,
       'x-rapidapi-host': 'sephora.p.rapidapi.com'
     }
   };
