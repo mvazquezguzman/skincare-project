@@ -1,57 +1,118 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { supabase } from '@/lib/supabase';
+import { useOutsideClick } from '@/hooks/use-outside-click';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Product {
   id: string;
-  name: string;
-  brand: string;
+  productBrand: string;
+  productName: string;
   price: number;
-  image: string;
-  rating: number;
-  reviewCount: number;
-  description: string;
-  category?: string;
-  ingredients?: string[];
+  description: string | null;
+  imgURL: string | null;
+  productURL: string | null;
+  categoryName: string | null;
 }
 
-type SortOption = 'default' | 'price-low-high' | 'price-high-low' | 'rating-high-low';
+type SortOption = 'default' | 'price-low-high' | 'price-high-low' | 'brand-name';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [sortedProducts, setSortedProducts] = useState<Product[]>([]);
   const [displayedProducts, setDisplayedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('default');
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [categories, setCategories] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [productsPerPage] = useState(50);
+  const [expandedProduct, setExpandedProduct] = useState<Product | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const id = useId();
 
   const fetchProducts = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Fetch products from the API endpoint
-      const response = await fetch('/api/products');
-      const data = await response.json();
-      
-      if (data.success && data.products) {
-        setProducts(data.products);
-        setSortedProducts(data.products);
-      } else {
-        throw new Error(data.message || 'Failed to fetch products');
+      const batchSize = 1000; // Supabase default limit
+      let allProducts: Product[] = [];
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error: fetchError } = await supabase
+          .from('all_products')
+          .select('id, productBrand, productName, price, description, imgURL, productURL, categoryName')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + batchSize - 1);
+        
+        if (fetchError) {
+          throw fetchError;
+        }
+        
+        if (data && data.length > 0) {
+          allProducts = [...allProducts, ...(data as Product[])];
+          
+          if (data.length < batchSize) {
+            hasMore = false;
+          } else {
+            offset += batchSize;
+          }
+        } else {
+          hasMore = false;
+        }
       }
+      
+      setProducts(allProducts);
+      
+      const excludedCategories = ['Body Lotions & Body Oils', 'Color Correct', 'Face Wipes'];
+      const uniqueCategories = Array.from(
+        new Set(
+          allProducts
+            .map(p => p.categoryName)
+            .filter((cat): cat is string => 
+              cat !== null && 
+              cat !== undefined && 
+              !excludedCategories.includes(cat)
+            )
+            .sort()
+        )
+      );
+      setCategories(uniqueCategories);
+      setFilteredProducts(allProducts);
     } catch (err) {
       console.error('Error fetching products:', err);
       setError(err instanceof Error ? err.message : 'Failed to load products');
-      
-      // Fallback to empty array if API fails
       setProducts([]);
     } finally {
       setLoading(false);
     }
   };
+
+  // Filter products by selected categories
+  useEffect(() => {
+    if (selectedCategories.size === 0) {
+      setFilteredProducts(products);
+    } else {
+      const filtered = products.filter(product => 
+        product.categoryName && selectedCategories.has(product.categoryName)
+      );
+      setFilteredProducts(filtered);
+    }
+    setCurrentPage(1);
+  }, [selectedCategories, products]);
 
   // Sorting function
   const sortProducts = (products: Product[], sortOption: SortOption): Product[] => {
@@ -59,11 +120,17 @@ export default function ProductsPage() {
     
     switch (sortOption) {
       case 'price-low-high':
-        return sorted.sort((a, b) => a.price - b.price);
+        return sorted.sort((a, b) => Number(a.price) - Number(b.price));
       case 'price-high-low':
-        return sorted.sort((a, b) => b.price - a.price);
-      case 'rating-high-low':
-        return sorted.sort((a, b) => b.rating - a.rating);
+        return sorted.sort((a, b) => Number(b.price) - Number(a.price));
+      case 'brand-name':
+        return sorted.sort((a, b) => {
+          const brandA = a.productBrand.toLowerCase();
+          const brandB = b.productBrand.toLowerCase();
+          if (brandA < brandB) return -1;
+          if (brandA > brandB) return 1;
+          return 0;
+        });
       default:
         return sorted;
     }
@@ -73,18 +140,32 @@ export default function ProductsPage() {
   const handleSortChange = (newSort: SortOption) => {
     setSortBy(newSort);
     setCurrentPage(1); // Reset to first page when sorting
-    const sorted = sortProducts(products, newSort);
-    setSortedProducts(sorted);
+  };
+
+  // Handle category filter toggle
+  const toggleCategory = (category: string) => {
+    setSelectedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(category)) {
+        newSet.delete(category);
+      } else {
+        newSet.add(category);
+      }
+      return newSet;
+    });
   };
 
   // Pagination logic
   const totalPages = Math.ceil(sortedProducts.length / productsPerPage);
   const startIndex = (currentPage - 1) * productsPerPage;
   const endIndex = startIndex + productsPerPage;
-  const currentProducts = sortedProducts.slice(startIndex, endIndex);
 
   // Update displayed products when sorted products or page changes
   useEffect(() => {
+    const start = (currentPage - 1) * productsPerPage;
+    const end = start + productsPerPage;
+    const currentProducts = sortedProducts.slice(start, end);
+    console.log('Displayed products:', currentProducts.length, 'Sorted products:', sortedProducts.length);
     setDisplayedProducts(currentProducts);
   }, [sortedProducts, currentPage, productsPerPage]);
 
@@ -110,11 +191,39 @@ export default function ProductsPage() {
     fetchProducts();
   }, []);
 
-  // Update sorted products when products or sort changes
+  // Update sorted products when filtered products or sort changes
   useEffect(() => {
-    const sorted = sortProducts(products, sortBy);
+    const sorted = sortProducts(filteredProducts, sortBy);
     setSortedProducts(sorted);
-  }, [products, sortBy]);
+  }, [filteredProducts, sortBy]);
+
+  // Handle product click to expand
+  const handleProductClick = (product: Product) => {
+    setExpandedProduct(expandedProduct?.id === product.id ? null : product);
+  };
+
+  // Close expanded product on ESC key and manage body overflow
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setExpandedProduct(null);
+      }
+    }
+
+    if (expandedProduct) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'auto';
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = 'auto';
+    };
+  }, [expandedProduct]);
+
+  useOutsideClick(ref, () => setExpandedProduct(null));
 
   if (loading) {
     return (
@@ -145,110 +254,228 @@ export default function ProductsPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Skincare Products</h1>
+    <div className="container mx-auto px-4 py-4 md:py-8">
+      <h1 className="text-2xl md:text-3xl font-bold mb-4 md:mb-6">All Skincare Products</h1>
       
-      <p className="text-gray-600 mb-8">
-        Discover our curated collection of skincare products.
+      <p className="text-gray-600 mb-4 md:mb-8 text-sm md:text-base">
+        Search and filter thorught all the skincare products.
       </p>
       
       {/* Product Count */}
-      <div className="mb-4">
-        <p className="text-sm text-gray-500">
+      <div className="mb-2 md:mb-4">
+        <p className="text-xs md:text-sm text-gray-500">
           Showing {startIndex + 1}-{Math.min(endIndex, sortedProducts.length)} of {sortedProducts.length} products
-          {sortedProducts.length !== products.length && ` (${products.length} total)`}
+          {selectedCategories.size > 0 && ` (${products.length} total)`}
         </p>
       </div>
       
+      {/* Category Filters */}
+      <div className="mb-3 md:mb-6">
+        <div className="flex flex-nowrap md:flex-wrap gap-1.5 md:gap-2 overflow-x-auto pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+          {categories.map((category) => (
+            <button
+              key={category}
+              onClick={() => toggleCategory(category)}
+              className={`px-2 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap flex-shrink-0 ${
+                selectedCategories.has(category)
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 shadow-sm'
+              }`}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Sorting Controls */}
-      <div className="mb-8">
-        <div className="flex flex-wrap items-center gap-4">
-          <span className="text-sm font-medium text-gray-700">Sort by:</span>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => handleSortChange('default')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                sortBy === 'default'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Default
-            </button>
-            <button
-              onClick={() => handleSortChange('price-low-high')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                sortBy === 'price-low-high'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Price: Low to High
-            </button>
-            <button
-              onClick={() => handleSortChange('price-high-low')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                sortBy === 'price-high-low'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Price: High to Low
-            </button>
-            <button
-              onClick={() => handleSortChange('rating-high-low')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                sortBy === 'rating-high-low'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Rating: High to Low
-            </button>
-          </div>
+      <div className="mb-4 md:mb-8">
+        <div className="flex flex-wrap items-center gap-2 md:gap-4">
+          <span className="text-xs md:text-sm font-medium text-gray-700">Sort by:</span>
+          <Select value={sortBy} onValueChange={(value) => handleSortChange(value as SortOption)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Select sort option" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default</SelectItem>
+              <SelectItem value="brand-name">Brand Name</SelectItem>
+              <SelectItem value="price-low-high">Low to High</SelectItem>
+              <SelectItem value="price-high-low">High to Low</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {displayedProducts.map((product) => (
-          <div key={product.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-            <div className="aspect-square bg-gray-200">
+      {/* Mobile List Layout */}
+      <div className="flex flex-col gap-4 md:hidden">
+        {displayedProducts.length > 0 ? displayedProducts.map((product) => (
+          <button
+            key={product.id}
+            onClick={() => handleProductClick(product)}
+            className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow text-left w-full flex gap-4 p-4"
+          >
+            <div className="w-24 h-24 flex-shrink-0 bg-gray-200 rounded-lg overflow-hidden">
               <img 
-                src={product.image} 
-                alt={product.name}
+                src={product.imgURL || '/placeholder.jpg'} 
+                alt={product.productName}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.currentTarget.src = '/photo-placeholder.jpg';
+                  e.currentTarget.src = '/placeholder.jpg';
                 }}
               />
             </div>
-            <div className="p-4">
-              <h3 className="font-semibold text-lg mb-2 line-clamp-2">{product.name}</h3>
-              <p className="text-gray-600 text-sm mb-2">{product.brand}</p>
-              <div className="flex items-center mb-2">
-                <div className="flex text-yellow-400">
-                  {[...Array(5)].map((_, i) => (
-                    <span key={i} className={i < Math.floor(product.rating) ? 'text-yellow-400' : 'text-gray-300'}>
-                      ★
-                    </span>
-                  ))}
-                </div>
-                <span className="text-sm text-gray-600 ml-2">
-                  ({product.reviewCount} reviews)
-                </span>
-              </div>
-              <p className="text-xl font-bold text-green-600">
-                ${product.price.toFixed(2)}
+            <div className="flex-1 min-w-0">
+              <p className="text-gray-600 text-xs mb-1 font-medium">{product.productBrand}</p>
+              <h3 className="font-semibold text-base mb-1 line-clamp-2">
+                {product.productName}
+              </h3>
+              <p className="text-lg font-bold text-green-600 mb-2">
+                ${Number(product.price).toFixed(2)}
               </p>
               {product.description && (
-                <p className="text-sm text-gray-500 mt-2 line-clamp-2">
+                <p className="text-xs text-gray-500 line-clamp-2">
                   {product.description}
                 </p>
               )}
             </div>
+          </button>
+        )) : (
+          <div className="text-center py-8">
+            <p className="text-gray-500">Loading products...</p>
           </div>
-        ))}
+        )}
       </div>
+
+      {/* Desktop Grid Layout */}
+      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        {displayedProducts.length > 0 ? displayedProducts.map((product) => (
+          <button
+            key={product.id}
+            onClick={() => handleProductClick(product)}
+            className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow text-left w-full flex flex-col"
+          >
+            <div className="aspect-square bg-gray-200 overflow-hidden relative w-full flex-shrink-0">
+              <img 
+                src={product.imgURL || '/placeholder.jpg'} 
+                alt={product.productName}
+                className="w-full h-full object-cover object-center"
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.src = '/placeholder.jpg';
+                }}
+              />
+            </div>
+            <div className="p-4">
+              <p className="text-gray-600 text-sm mb-2 font-medium">{product.productBrand}</p>
+              <h3 className="font-semibold text-lg mb-2 line-clamp-2">
+                {product.productName}
+              </h3>
+              <p className="text-xl font-bold text-green-600 mb-3">
+                ${Number(product.price).toFixed(2)}
+              </p>
+              {product.description && (
+                <p className="text-sm text-gray-500 line-clamp-3">
+                  {product.description}
+                </p>
+              )}
+            </div>
+          </button>
+        )) : (
+          <div className="col-span-full text-center py-8">
+            <p className="text-gray-500">Loading products...</p>
+          </div>
+        )}
+      </div>
+
+      {/* Expanded Product Modal */}
+      <AnimatePresence>
+        {expandedProduct && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/20 h-full w-full z-10"
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {expandedProduct ? (
+          <div className="fixed inset-0 grid place-items-center z-[100]">
+            <motion.button
+              key={`button-${expandedProduct.id}-${id}`}
+              layout
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{
+                opacity: 0,
+                transition: {
+                  duration: 0.05,
+                },
+              }}
+              className="flex absolute top-4 right-4 items-center justify-center bg-white rounded-full h-8 w-8 z-50 shadow-lg hover:bg-gray-100 transition-colors"
+              onClick={() => setExpandedProduct(null)}
+              aria-label="Close"
+            >
+              X
+            </motion.button>
+
+            <motion.div
+              layoutId={`card-${expandedProduct.id}-${id}`}
+              ref={ref}
+              className="w-full max-w-[500px] h-full md:h-fit md:max-h-[90%] flex flex-col bg-white sm:rounded-3xl overflow-hidden"
+            >
+              <motion.div layoutId={`image-${expandedProduct.id}-${id}`}>
+                <img
+                  width={200}
+                  height={200}
+                  src={expandedProduct.imgURL || '/placeholder.jpg'}
+                  alt={expandedProduct.productName}
+                  className="w-full h-80 lg:h-80 sm:rounded-tr-lg sm:rounded-tl-lg object-cover object-top"
+                  onError={(e) => {
+                    e.currentTarget.src = '/placeholder.jpg';
+                  }}
+                />
+              </motion.div>
+
+              <div>
+                <div className="flex justify-between items-start p-4">
+                  <div>
+                    <motion.h3
+                      layoutId={`title-${expandedProduct.id}-${id}`}
+                      className="font-bold text-neutral-700"
+                    >
+                      {expandedProduct.productName}
+                    </motion.h3>
+                    <p className="text-neutral-600 text-sm mt-1">
+                      {expandedProduct.productBrand}
+                    </p>
+                    <motion.p
+                      layoutId={`price-${expandedProduct.id}-${id}`}
+                      className="text-2xl font-bold text-green-600 mt-2"
+                    >
+                      ${Number(expandedProduct.price).toFixed(2)}
+                    </motion.p>
+                  </div>
+                </div>
+                {expandedProduct.description && (
+                  <div className="pt-4 relative px-4">
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="text-neutral-600 text-xs md:text-sm lg:text-base h-40 md:h-fit pb-10 flex flex-col items-start gap-4 overflow-auto [mask:linear-gradient(to_bottom,white,white,transparent)] [scrollbar-width:none] [-ms-overflow-style:none] [-webkit-overflow-scrolling:touch]"
+                    >
+                      <p className="whitespace-pre-wrap">{expandedProduct.description}</p>
+                    </motion.div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
       
       {displayedProducts.length === 0 && (
         <div className="text-center py-12">
@@ -317,3 +544,4 @@ export default function ProductsPage() {
     </div>
   );
 }
+
