@@ -10,9 +10,8 @@ export function getUserRedirectPath(user: User | null): string {
     return '/auth/signin'
   }
 
-  // All authenticated users go to user-profile
-  // The skin-quiz is accessible from the profile page
-  return '/user-profile'
+  // All authenticated users go to home page
+  return '/home'
 }
 
 /**
@@ -28,4 +27,3 @@ export function getNewUserRedirectPath(user: User | null): string {
   // New users should be directed to skin-quiz
   return '/skin-quiz'
 }
-
