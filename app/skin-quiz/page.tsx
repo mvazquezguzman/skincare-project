@@ -12,11 +12,9 @@ import {
   ArrowRightIcon,
   ArrowLeftIcon,
   CheckCircleIcon,
-  AcademicCapIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline"
 import { useRouter } from "next/navigation"
-import Link from "next/link"
 import { useAuth } from "@/contexts/AuthContext"
 import { supabase } from "@/lib/supabase"
 
@@ -24,8 +22,8 @@ interface SkinProfile {
   topConcerns: string[]
   skinFeel: string
   makeupUsage: string
-  sunscreenPreference: string
   ingredientPreferences: string[]
+  budgetRange: string
 }
 
 const SkinQuiz = () => {
@@ -41,8 +39,8 @@ const SkinQuiz = () => {
     "Top Concerns",
     "Skin Feel",
     "Makeup Usage",
-    "Sunscreen Preference",
-    "Ingredient Preferences"
+    "Ingredient Preferences",
+    "Budget Range"
   ]
 
   const handleNext = async () => {
@@ -70,11 +68,11 @@ const SkinQuiz = () => {
           if (skinProfile.makeupUsage) {
             updateData.makeup_usage = skinProfile.makeupUsage
           }
-          if (skinProfile.sunscreenPreference) {
-            updateData.sunscreen_preference = skinProfile.sunscreenPreference
-          }
           if (skinProfile.ingredientPreferences && skinProfile.ingredientPreferences.length > 0) {
             updateData.ingredient_preferences = skinProfile.ingredientPreferences
+          }
+          if (skinProfile.budgetRange) {
+            updateData.budget_range = skinProfile.budgetRange
           }
 
           // Try to save with all fields first
@@ -110,8 +108,8 @@ const SkinQuiz = () => {
               // Save additional data to localStorage as fallback
               localStorage.setItem('skinwise-quiz-extra-data', JSON.stringify({
                 makeupUsage: skinProfile.makeupUsage,
-                sunscreenPreference: skinProfile.sunscreenPreference,
-                ingredientPreferences: skinProfile.ingredientPreferences
+                ingredientPreferences: skinProfile.ingredientPreferences,
+                budgetRange: skinProfile.budgetRange
               }))
               // Clear old localStorage if it exists
               localStorage.removeItem('skinwise-quiz-results')
@@ -199,15 +197,6 @@ const SkinQuiz = () => {
             </Card>
 
             <Card>
-              <CardHeader> <CardTitle>Sunscreen Preference</CardTitle> </CardHeader>
-              <CardContent>
-                <Badge variant="secondary">
-                  {skinProfile.sunscreenPreference || "Not specified"}
-                </Badge>
-              </CardContent>
-            </Card>
-
-            <Card>
               <CardHeader> <CardTitle>Ingredient Preferences</CardTitle> </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
@@ -219,9 +208,18 @@ const SkinQuiz = () => {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader> <CardTitle>Budget Range</CardTitle> </CardHeader>
+              <CardContent>
+                <Badge variant="secondary">
+                  {skinProfile.budgetRange || "Not specified"}
+                </Badge>
+              </CardContent>
+            </Card>
           </div>
 
-          <div className="text-center space-x-4">
+          <div className="text-center">
             <Button 
               size="lg" 
               className="font-sans"
@@ -246,11 +244,11 @@ const SkinQuiz = () => {
                     if (skinProfile.makeupUsage) {
                       updateData.makeup_usage = skinProfile.makeupUsage
                     }
-                    if (skinProfile.sunscreenPreference) {
-                      updateData.sunscreen_preference = skinProfile.sunscreenPreference
-                    }
                     if (skinProfile.ingredientPreferences && skinProfile.ingredientPreferences.length > 0) {
                       updateData.ingredient_preferences = skinProfile.ingredientPreferences
+                    }
+                    if (skinProfile.budgetRange) {
+                      updateData.budget_range = skinProfile.budgetRange
                     }
 
                     // Try to save with all fields first
@@ -285,8 +283,8 @@ const SkinQuiz = () => {
                         // Save additional data to localStorage as fallback
                         localStorage.setItem('skinwise-quiz-extra-data', JSON.stringify({
                           makeupUsage: skinProfile.makeupUsage,
-                          sunscreenPreference: skinProfile.sunscreenPreference,
-                          ingredientPreferences: skinProfile.ingredientPreferences
+                          ingredientPreferences: skinProfile.ingredientPreferences,
+                          budgetRange: skinProfile.budgetRange
                         }))
                         router.push('/user-profile')
                       }
@@ -329,9 +327,6 @@ const SkinQuiz = () => {
                   Save to My Profile
                 </>
               )}
-            </Button>
-            <Button asChild size="lg" variant="outline" className="font-sans">
-              <Link href="/skin-routine">Create My Routine</Link>
             </Button>
           </div>
         </div>
@@ -382,15 +377,15 @@ const SkinQuiz = () => {
               />
             )}
             {currentStep === 3 && (
-              <SunscreenPreferenceStep 
-                value={skinProfile.sunscreenPreference} 
-                onChange={(value) => setSkinProfile(prev => ({ ...prev, sunscreenPreference: value }))} 
-              />
-            )}
-            {currentStep === 4 && (
               <IngredientPreferencesStep 
                 value={skinProfile.ingredientPreferences || []} 
                 onChange={(value) => setSkinProfile(prev => ({ ...prev, ingredientPreferences: value }))} 
+              />
+            )}
+            {currentStep === 4 && (
+              <BudgetRangeStep 
+                value={skinProfile.budgetRange} 
+                onChange={(value) => setSkinProfile(prev => ({ ...prev, budgetRange: value }))} 
               />
             )}
           </CardContent>
@@ -512,7 +507,11 @@ function SkinFeelStep({ value, onChange }: { value?: string, onChange: (value: s
     { value: "dry", label: "Dry", description: "My whole face feels tight and can be flaky." },
     { value: "oily", label: "Oily", description: "My whole face feels greasy and looks shiny." },
     { value: "combination", label: "Combination", description: "I feel tightness on my cheeks, but my T-zone (nose & forehead) is oily or shiny." },
-    { value: "normal", label: "Normal/Balanced", description: "My skin feels comfortable, not too oily, and not too dry." }
+    { value: "normal", label: "Normal", description: "My skin feels comfortable, not too oily, and not too dry." },
+    { value: "balanced", label: "Balanced", description: "My skin feels comfortable, not too oily, and not too dry." },
+    { value: "sensitive", label: "Sensitive", description: "My skin is easily irritated, red, or reactive to products." },
+    { value: "irritated", label: "Irritated", description: "My skin is currently experiencing irritation or inflammation." },
+    { value: "acne", label: "Acne-Prone", description: "My skin is prone to breakouts and acne." }
   ]
 
   return (
@@ -535,29 +534,6 @@ function MakeupUsageStep({ value, onChange }: { value?: string, onChange: (value
     { value: "none", label: "I don't wear makeup" },
     { value: "eyes-only", label: "Eye areas only", description: "e.g., mascara, eyeshadow" },
     { value: "full-face", label: "Full face", description: "e.g., foundation, concealer, etc." }
-  ]
-
-  return (
-    <RadioGroup value={value} onValueChange={onChange} className="space-y-2">
-      {options.map((option) => (
-        <div key={option.value} className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-muted/50">
-          <RadioGroupItem value={option.value} id={option.value} />
-          <div className="flex-1">
-            <Label htmlFor={option.value} className="font-medium cursor-pointer text-sm">{option.label}</Label>
-            {option.description && (
-              <p className="text-xs text-muted-foreground mt-1">{option.description}</p>
-            )}
-          </div>
-        </div>
-      ))}
-    </RadioGroup>
-  )
-}
-
-function SunscreenPreferenceStep({ value, onChange }: { value?: string, onChange: (value: string) => void }) {
-  const options = [
-    { value: "separate", label: "A separate sunscreen product" },
-    { value: "combined", label: "Sunscreen combined with my moisturizer", description: "Moisturizer with SPF" }
   ]
 
   return (
@@ -617,13 +593,37 @@ function IngredientPreferencesStep({ value, onChange }: { value: string[], onCha
   )
 }
 
+function BudgetRangeStep({ value, onChange }: { value?: string, onChange: (value: string) => void }) {
+  const options = [
+    { value: "budget", label: "Budget-Friendly", description: "Below $20 per product" },
+    { value: "moderate", label: "Moderate", description: "Up to $30 per product" },
+    { value: "premium", label: "Premium", description: "Up to $50 per product" },
+    { value: "luxury", label: "Luxury", description: "$50+ per product" },
+    { value: "flexible", label: "Flexible", description: "Budget varies based on product effectiveness" }
+  ]
+
+  return (
+    <RadioGroup value={value} onValueChange={onChange} className="space-y-2">
+      {options.map((option) => (
+        <div key={option.value} className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-muted/50">
+          <RadioGroupItem value={option.value} id={option.value} />
+          <div className="flex-1">
+            <Label htmlFor={option.value} className="font-medium cursor-pointer text-sm">{option.label}</Label>
+            <p className="text-xs text-muted-foreground mt-1">{option.description}</p>
+          </div>
+        </div>
+      ))}
+    </RadioGroup>
+  )
+}
+
 function isStepValid(step: number, profile: Partial<SkinProfile>): boolean {
   switch (step) {
     case 0: return (profile.topConcerns?.length || 0) > 0
     case 1: return !!profile.skinFeel
     case 2: return !!profile.makeupUsage
-    case 3: return !!profile.sunscreenPreference
-    case 4: return (profile.ingredientPreferences?.length || 0) > 0
+    case 3: return (profile.ingredientPreferences?.length || 0) > 0
+    case 4: return !!profile.budgetRange
     default: return false
   }
 }
