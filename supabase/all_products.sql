@@ -15,10 +15,8 @@ SELECT
   skin_type,
   skin_concerns,
   ingredients,
-  highlighted_ingredients,
   description,
   detailed_description,
-  "suggestedUsage",
   "imageURL" AS "imgURL",
   "productURL",
   created_at,
@@ -41,10 +39,8 @@ SELECT
   skin_type,
   skin_concerns,
   ingredients,
-  NULL::JSONB AS highlighted_ingredients,  -- Ulta doesn't have highlighted_ingredients
   description,
   NULL::TEXT AS detailed_description,  -- Ulta doesn't have detailed_description
-  "suggestedUsage",
   "imgURL",
   "productURL",
   created_at,
