@@ -10,14 +10,14 @@ export default function AuthPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // check for login mode parameter and redirect if already authenticated
+  // Check for login mode parameter and redirect if already authenticated
   useEffect(() => {
     const mode = searchParams.get('mode')
     
     if (isAuthenticated && !isLoading) {
-      router.push("/")
+      router.push("/home")
     } else if (!isLoading) {
-      // redirect to sign-in by default, or sign-up if mode=signup
+      // Redirect to sign-in by default, or sign-up if mode=signup
       if (mode === 'signup') {
         router.push("/auth/signup")
       } else {
@@ -26,7 +26,7 @@ export default function AuthPage() {
     }
   }, [isAuthenticated, isLoading, router, searchParams])
 
-  // show loading while determining redirect
+  // Show loading while determining redirect
   return (
     <div className="min-h-screen bg-background">
       {/* Loading Section */}
