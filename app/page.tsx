@@ -2,104 +2,87 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel"
+import { ContainerTextFlip } from "@/components/ui/container-text-flip"
+import { useAuth } from "@/contexts/AuthContext"
+import { supabase } from "@/lib/supabase"
 import {
-  BeakerIcon,
   ShieldCheckIcon,
-  CalendarIcon,
   BookOpenIcon,
-  MagnifyingGlassIcon,
-  AcademicCapIcon,
   HeartIcon,
 } from "@heroicons/react/24/outline"
 
-function AnimatedSkinConcerns() {
-  const firstConcerns = [
-    "dryness",
-    "acne", 
-    "aging",
-    "dark spots",
-    "rosacea",
-    "combination"
+type ProductCategory = "Face Cleanser" | "Toner" | "Moisturizer"
+
+type SkincareProduct = {
+  id: string
+  category: ProductCategory
+  name: string
+  brand?: string | null
+  description?: string | null
+  image: string
+  productURL?: string | null
+}
+
+const PRODUCT_CATEGORY_KEYWORDS: Record<ProductCategory, string[]> = {
+  "Face Cleanser": ["Face Cleanser", "Cleanser"],
+  Toner: ["Toner", "Essence"],
+  Moisturizer: ["Moisturizer", "Moisturizing", "Cream"],
+}
+
+function getFallbackSlides(): SkincareProduct[] {
+  return [
+    {
+      id: "fallback-cleanser",
+      category: "Face Cleanser",
+      name: "Personalized Cleanser",
+      description: "We’ll pick a gentle daily cleanser curated from your routine.",
+      image: "/placeholder.jpg",
+    },
+    {
+      id: "fallback-toner",
+      category: "Toner",
+      name: "Balancing Toner",
+      description: "Hydrate and prep with soothing actives that fit your skin goals.",
+      image: "/placeholder.jpg",
+    },
+    {
+      id: "fallback-moisturizer",
+      category: "Moisturizer",
+      name: "Barrier-Lock Moisturizer",
+      description: "Seal in treatment steps without clogging or heaviness.",
+      image: "/placeholder.jpg",
+    },
   ]
-
-  const secondConcerns = [
-    "sensitivity",
-    "oiliness",
-    "fine lines", 
-    "hyperpigmentation",
-    "redness",
-    "skin"
-  ]
-
-  const [firstIndex, setFirstIndex] = useState(0)
-  const [secondIndex, setSecondIndex] = useState(0)
-  const [animationKey, setAnimationKey] = useState(0)
-  const [isAnimatingFirst, setIsAnimatingFirst] = useState(true)
-
-  useEffect(() => {
-    const animateConcerns = () => {
-      if (isAnimatingFirst) {
-        setFirstIndex((prevIndex) => (prevIndex + 1) % firstConcerns.length)
-        setAnimationKey(prev => prev + 1)
-        setIsAnimatingFirst(false)
-      } else {
-        setSecondIndex((prevIndex) => (prevIndex + 1) % secondConcerns.length)
-        setAnimationKey(prev => prev + 1)
-        setIsAnimatingFirst(true)
-      }
-    }
-
-    const initialTimeout = setTimeout(() => {
-      animateConcerns()
-    }, 3000)
-
-    const interval = setInterval(() => {
-      animateConcerns()
-    }, 6000)
-
-    return () => {
-      clearTimeout(initialTimeout)
-      clearInterval(interval)
-    }
-  }, [isAnimatingFirst])
-
-  return (
-    <span className="font-semibold">
-      <span className="inline-block">
-        <span 
-          key={isAnimatingFirst ? `first-${firstIndex}-${animationKey}` : `first-static-${firstIndex}`}
-          className={`inline-block ${isAnimatingFirst ? 'animate-flip' : ''}`}
-          style={{
-            animationDuration: '0.6s',
-            animationTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)'
-          }}
-        >
-          {firstConcerns[firstIndex]}
-        </span>
-      </span>
-      <span className="mx-1">+</span>
-      <span className="inline-block">
-        <span 
-          key={!isAnimatingFirst ? `second-${secondIndex}-${animationKey}` : `second-static-${secondIndex}`}
-          className={`inline-block ${!isAnimatingFirst ? 'animate-flip' : ''}`}
-          style={{
-            animationDuration: '0.6s',
-            animationTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)'
-          }}
-        >
-          {secondConcerns[secondIndex]}
-        </span>
-      </span>
-    </span>
-  )
 }
 
 export default function HomePage() {
+  const { isAuthenticated, isLoading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.push("/home")
+    }
+  }, [isAuthenticated, isLoading, router])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  if (isAuthenticated) {
+    return null // Will redirect to /home
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <GuestLandingPage />
@@ -111,26 +94,127 @@ function GuestLandingPage() {
   return (
     <>
       <HeroSection />
-      <FeaturesSection />
       <SkinQuizSection />
+      <FeaturesSection />
       <FinalCTASection />
     </>
   )
 }
 
 function HeroSection() {
+  const [featuredSlides, setFeaturedSlides] = useState<SkincareProduct[]>([])
+  const [isCarouselLoading, setIsCarouselLoading] = useState(true)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function fetchFeaturedProducts() {
+      setIsCarouselLoading(true)
+
+      try {
+        const categoryRequests: Array<Promise<SkincareProduct | null>> = (
+          Object.keys(PRODUCT_CATEGORY_KEYWORDS) as ProductCategory[]
+        ).map(async (category) => {
+            const keywords = PRODUCT_CATEGORY_KEYWORDS[category]
+            let query = supabase
+              .from("sephora_products")
+              .select("productId, productName, productBrand, imageURL, productURL, categoryName, description")
+              .not("imageURL", "is", null)
+              .limit(24)
+              .order("created_at", { ascending: false })
+
+            const filterClauses = keywords
+              .flatMap((keyword) => [
+                `categoryName.ilike.%${keyword}%`,
+                `productName.ilike.%${keyword}%`,
+              ])
+              .join(",")
+
+            if (filterClauses.length) {
+              query = query.or(filterClauses)
+            }
+
+            const { data, error } = await query
+
+            if (error) {
+              console.error(`Failed to load ${category} products`, error)
+              return null
+            }
+
+            const withImages = (data || []).filter((product) => Boolean(product.imageURL))
+
+            if (!withImages.length) {
+              return null
+            }
+
+            const randomProduct = withImages[Math.floor(Math.random() * withImages.length)]
+
+            const product: SkincareProduct = {
+              id: randomProduct.productId,
+              category,
+              name: randomProduct.productName,
+              brand: randomProduct.productBrand,
+              description: randomProduct.description,
+              image: randomProduct.imageURL,
+              productURL: randomProduct.productURL,
+            }
+
+            return product
+          })
+
+        const slides = (await Promise.all(categoryRequests)).filter(
+          (slide): slide is SkincareProduct => Boolean(slide)
+        )
+
+        if (!isMounted) return
+
+        setFeaturedSlides(slides.length ? slides : getFallbackSlides())
+      } catch (error) {
+        console.error("Failed to load featured products", error)
+        if (isMounted) {
+          setFeaturedSlides(getFallbackSlides())
+        }
+      } finally {
+        if (isMounted) {
+          setIsCarouselLoading(false)
+        }
+      }
+    }
+
+    fetchFeaturedProducts()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   return (
     <section className="min-h-screen flex items-center justify-center bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           {/* Left Content - Title */}
           <div className="text-center lg:text-left space-y-8">
-            <h1 className="font-sans font-black text-6xl md:text-7xl lg:text-8xl text-foreground leading-tight">Skincare Routine</h1>
-            <h2 className="font-sans font-bold text-5xl md:text-6xl lg:text-7xl text-foreground">Made for You</h2>
-            <p className="font-sans text-xl text-muted-foreground leading-relaxed">
-              Clinically personalized skincare for<br />
-              <span className="block"> <AnimatedSkinConcerns /> </span>
-            </p>
+            <h1 className="font-playfair font-black text-6xl md:text-7xl lg:text-8xl text-foreground leading-tight">SkinWise</h1>
+            <p className="font-sans font-bold text-5xl md:text-6xl lg:text-7xl text-foreground"> Personalized skincare routine made for</p>
+            <h3 className="font-sans text-xl text-muted-foreground leading-relaxed">
+              <span className="block">
+                <ContainerTextFlip 
+                  words={[
+                    "dryness",
+                    "acne",
+                    "aging",
+                    "dark spots",
+                    "rosacea",
+                    "combination",
+                    "sensitivity",
+                    "oiliness",
+                    "fine lines",
+                    "hyperpigmentation",
+                    "redness"
+                  ]}
+                />
+              </span>
+            </h3>
             <div className="pt-4">
               <Link href="/auth/signup"> <Button size="lg" className="font-sans text-lg px-8 py-6">Get Started</Button> </Link>
             </div>
@@ -146,69 +230,33 @@ function HeroSection() {
               }}
             >
               <CarouselContent>
-                <CarouselItem>
-                  <div className="bg-card border border-border rounded-lg p-8 shadow-lg h-[28rem] flex flex-col justify-center">
-                    <div className="space-y-6">
-                      <div className="w-50 h-64 mx-auto rounded-lg overflow-hidden bg-muted">
-                        <Image 
-                          src="/placeholder.jpg" 
-                          alt="Personalized Cleanser" 
-                          width={200}
-                          height={200}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      </div>
-                      <div className="text-center">
-                        <h3 className="font-sans font-bold text-2xl text-foreground">Personalized Cleanser</h3>
-                      </div>
-                    </div>
-                  </div>
-                </CarouselItem>
-                <CarouselItem>
-                  <div className="bg-card border border-border rounded-lg p-8 shadow-lg h-[28rem] flex flex-col justify-center">
-                    <div className="space-y-6">
-                      <div className="w-50 h-64 mx-auto rounded-lg overflow-hidden bg-muted">
-                        <Image 
-                          src="/placeholder.jpg" 
-                          alt="Personalized Treatment" 
-                          width={200}
-                          height={200}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      </div>
-                      <div className="text-center">
-                        <h3 className="font-sans font-bold text-2xl text-foreground">Personalized Treatment</h3>
+                {(isCarouselLoading ? getFallbackSlides() : featuredSlides).map((product) => (
+                  <CarouselItem key={product.name}>
+                    <div className="bg-card border border-border rounded-lg p-10 shadow-lg h-[34rem] flex flex-col justify-center">
+                      <div className="space-y-6">
+                        <div className="w-50 h-72 mx-auto rounded-lg overflow-hidden bg-muted">
+                          <Image 
+                            src={product.image} 
+                            alt={product.name} 
+                            width={320}
+                            height={360}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none"
+                            }}
+                          />
+                        </div>
+                        <div className="text-center space-y-2">
+                          <p className="text-xs uppercase tracking-[0.35em] text-muted-foreground">{product.category}</p>
+                          <h3 className="font-sans font-bold text-2xl text-foreground">{product.name}</h3>
+                          {product.brand && (
+                            <p className="font-sans text-sm text-muted-foreground">{product.brand}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </CarouselItem>
-                <CarouselItem>
-                  <div className="bg-card border border-border rounded-lg p-8 shadow-lg h-[28rem] flex flex-col justify-center">
-                    <div className="space-y-6">
-                      <div className="w-50 h-64 mx-auto rounded-lg overflow-hidden bg-muted">
-                        <Image 
-                          src="/placeholder.jpg" 
-                          alt="Personalized Moisturizer" 
-                          width={200}
-                          height={200}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      </div>
-                      <div className="text-center">
-                        <h3 className="font-sans font-bold text-2xl text-foreground">Personalized Moisturizer</h3>
-                      </div>
-                    </div>
-                  </div>
-                </CarouselItem>
+                  </CarouselItem>
+                ))}
               </CarouselContent>
               <CarouselPrevious />
               <CarouselNext />
@@ -232,17 +280,14 @@ function SkinQuizSection() {
 
           <div className="grid md:grid-cols-3 gap-6">
             <QuizStepCard 
-              icon={AcademicCapIcon}
               title="Quick Assessment"
               description="Simple questions about your skin type and concerns"
             />
             <QuizStepCard 
-              icon={CalendarIcon}
               title="Custom Routine"
               description="Get your personalized skincare routine and ingredient guide"
             />
             <QuizStepCard 
-              icon={MagnifyingGlassIcon}
               title="Product Analysis"
               description="Analyzes skincare products to find the best ones for your skin"
             />
@@ -254,20 +299,15 @@ function SkinQuizSection() {
 }
 
 function QuizStepCard({ 
-  icon: Icon, 
   title, 
   description 
 }: { 
-  icon: any
   title: string
   description: string 
 }) {
   return (
     <Card className="text-center p-6">
       <CardContent className="space-y-4">
-        <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-          <Icon className="h-6 w-6 text-primary" />
-        </div>
         <h3 className="font-sans font-bold text-lg">{title}</h3>
         <p className="font-sans text-sm text-muted-foreground">{description}</p>
       </CardContent>
@@ -278,24 +318,19 @@ function QuizStepCard({
 function FeaturesSection() {
   const features = [
     {
-      icon: BeakerIcon,
-      title: "Science-Based",
-      description: "Ingredients backed by clinical research and dermatologist recommendations"
-    },
-    {
-      icon: ShieldCheckIcon,
-      title: "Safe & Effective",
-      description: "All ingredients are tested for safety and compatibility with your skin type"
+      icon: HeartIcon,
+      title: "Personalized",
+      description: "Every routine is tailored specifically to your skin's unique needs"
     },
     {
       icon: BookOpenIcon,
       title: "Track Progress",
-      description: "Monitor your skin's improvement with our built-in progress tracking"
+      description: "Monitor your skin's improvement with your daily skincare diary"
     },
     {
-      icon: HeartIcon,
-      title: "Personalized",
-      description: "Every routine is tailored specifically to your skin's unique needs"
+      icon: ShieldCheckIcon,
+      title: "Safe & Effective",
+      description: "Browser through our ingredient database to find the best ingredients for your skin"
     }
   ]
 
@@ -304,11 +339,15 @@ function FeaturesSection() {
       <div className="max-w-6xl mx-auto">
         <div className="text-center space-y-12">
           <div className="space-y-4">
-            <h2 className="font-sans font-bold text-3xl md:text-4xl text-foreground"> Why Choose SkinWise? </h2>
-            <p className="font-sans text-lg text-muted-foreground max-w-2xl mx-auto"> Science-backed ingredients, personalized routines, and proven results. </p>
+            <h2 className="font-sans font-bold text-3xl md:text-4xl text-foreground">
+              Why Choose <span className="font-playfair">SkinWise</span>?
+            </h2>
+            <p className="font-sans text-lg text-muted-foreground max-w-2xl mx-auto">
+              Personalized routines with ingredient compatibility analysis. Discover the best ingredients for your skin and build your perfect routine today.
+            </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, index) => (
               <FeatureCard 
                 key={index}
@@ -339,7 +378,7 @@ function FeatureCard({
       <Icon className="h-8 w-8 text-primary" />
       </div>
       <h3 className="font-sans font-bold text-xl">{title}</h3>
-      <p className="font-sans text-muted-foreground"> {description} </p>
+      <p className="font-sans text-muted-foreground">{description}</p>
     </div>
   )
 }
@@ -350,11 +389,15 @@ function FinalCTASection() {
       <div className="max-w-4xl mx-auto text-center space-y-8">
         <div className="space-y-4">
           <h2 className="font-sans font-bold text-3xl md:text-4xl"> Ready to Transform Your Skin? </h2>
-          <p className="font-sans text-lg opacity-90"> Join now to discover your perfect skincare routine </p>
+          <p className="font-sans text-lg opacity-90"> Join now to discover and build your perfect routine today. </p>
         </div>
         <div className="pt-4">
           <Link href="/auth/signup">
-            <Button size="lg" className="font-sans text-lg px-8 py-6">
+            <Button 
+              size="lg" 
+              variant="secondary" 
+              className="font-sans text-lg px-8 py-6"
+            >
               Get Started
             </Button>
           </Link>
