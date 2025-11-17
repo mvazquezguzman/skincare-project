@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -151,14 +151,14 @@ const SkinQuiz = () => {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-8">
           <h1 className="font-sans font-bold text-3xl text-foreground mb-4">Your Skin Profile</h1>
-            <p className="font-sans text-muted-foreground">Based on your answers, here's your personalized skin analysis</p>
+            <p className="font-sans text-muted-foreground">Based on your answers, here&rsquo;s your personalized skin analysis</p>
             <div className="mt-4 p-4 bg-muted/50 rounded-lg border">
               <p className="text-sm text-muted-foreground">
                 <strong>Your personalized skincare profile is ready!</strong> 
                 {saveSuccess && isAuthenticated ? (
                   <span className="text-green-600 font-medium"> Your results have been automatically saved to your profile.</span>
                 ) : (
-                  " Click 'Save to My Profile' to save your results and access dermatologist-developed recommendations and track your progress."
+                  " Click &lsquo;Save to My Profile&rsquo; to save your results and access dermatologist-developed recommendations and track your progress."
                 )}
               </p>
             </div>
@@ -451,23 +451,111 @@ const SkinQuiz = () => {
 
 // Step Components
 function TopConcernsStep({ value, onChange }: { value: string[], onChange: (value: string[]) => void }) {
-  const concerns = [
-    "Texture",
-    "Dullness",
-    "Wrinkles/Fine Lines",
-    "Loss of Firmness (Aging)",
-    "Active Acne Breakouts",
-    "Help Prevent New Acne",
-    "Dryness",
-    "Dark Spots/Discoloration",
-    "Dark Circles",
-    "Oiliness/Shine",
-    "Redness",
-    "Puffiness Around Eyes",
-    "Post-Acne Marks",
-    "Establishing a General Skincare Routine",
-    "Prefer Not to Answer"
-  ]
+  const [concerns, setConcerns] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchSkinConcerns() {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        // Fetch all products with skin_concerns in batches
+        const batchSize = 1000
+        let allProducts: any[] = []
+        let from = 0
+        let hasMore = true
+
+        while (hasMore) {
+          const { data: products, error: fetchError } = await supabase
+            .from('all_products')
+            .select('skin_concerns')
+            .range(from, from + batchSize - 1)
+
+          if (fetchError) {
+            throw fetchError
+          }
+
+          if (products && products.length > 0) {
+            allProducts = [...allProducts, ...products]
+            from += batchSize
+            hasMore = products.length === batchSize
+          } else {
+            hasMore = false
+          }
+        }
+
+        // Extract all unique skin concerns from the products
+        const allConcernsSet = new Set<string>()
+        
+        allProducts.forEach((product) => {
+          if (product.skin_concerns) {
+            try {
+              // Handle both array and JSONB formats
+              let concernsArray: string[] = []
+              
+              if (Array.isArray(product.skin_concerns)) {
+                concernsArray = product.skin_concerns
+              } else if (typeof product.skin_concerns === 'string') {
+                // Try to parse if it's a JSON string
+                concernsArray = JSON.parse(product.skin_concerns)
+              } else {
+                // Try to convert JSONB object to array
+                concernsArray = JSON.parse(JSON.stringify(product.skin_concerns))
+              }
+              
+              if (Array.isArray(concernsArray)) {
+                concernsArray.forEach((concern: any) => {
+                  if (concern && typeof concern === 'string' && concern.trim()) {
+                    allConcernsSet.add(concern.trim())
+                  }
+                })
+              }
+            } catch (parseError) {
+              // Skip products with invalid skin_concerns format
+              console.warn('Failed to parse skin_concerns for product:', parseError)
+            }
+          }
+        })
+
+        // Convert set to sorted array
+        const uniqueConcerns = Array.from(allConcernsSet).sort()
+        
+        // Add "Prefer Not to Answer" option if not already present
+        if (!uniqueConcerns.includes("Prefer Not to Answer")) {
+          uniqueConcerns.push("Prefer Not to Answer")
+        }
+
+        setConcerns(uniqueConcerns)
+      } catch (err) {
+        console.error('Error fetching skin concerns:', err)
+        setError('Failed to load skin concerns. Please try again.')
+        // Fallback to default concerns if fetch fails
+        setConcerns([
+          "Texture",
+          "Dullness",
+          "Wrinkles/Fine Lines",
+          "Loss of Firmness (Aging)",
+          "Active Acne Breakouts",
+          "Help Prevent New Acne",
+          "Dryness",
+          "Dark Spots/Discoloration",
+          "Dark Circles",
+          "Oiliness/Shine",
+          "Redness",
+          "Puffiness Around Eyes",
+          "Post-Acne Marks",
+          "Establishing a General Skincare Routine",
+          "Prefer Not to Answer"
+        ])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchSkinConcerns()
+  }, [])
 
   const handleChange = (concern: string, checked: boolean) => {
     if (checked && value.length < 2) {
@@ -475,6 +563,42 @@ function TopConcernsStep({ value, onChange }: { value: string[], onChange: (valu
     } else if (!checked) {
       onChange(value.filter(c => c !== concern))
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground mb-3">Please select your top two concerns:</p>
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+          <span className="ml-2 text-sm text-muted-foreground">Loading skin concerns...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground mb-3">Please select your top two concerns:</p>
+        <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {concerns.map((concern) => (
+            <div key={concern} className="flex items-center space-x-2 p-2 border rounded-lg hover:bg-muted/50">
+              <Checkbox 
+                id={concern}
+                checked={value.includes(concern)}
+                onCheckedChange={(checked) => handleChange(concern, checked as boolean)}
+                disabled={!value.includes(concern) && value.length >= 2}
+              />
+              <Label htmlFor={concern} className="cursor-pointer text-sm"> {concern} </Label>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -507,11 +631,7 @@ function SkinFeelStep({ value, onChange }: { value?: string, onChange: (value: s
     { value: "dry", label: "Dry", description: "My whole face feels tight and can be flaky." },
     { value: "oily", label: "Oily", description: "My whole face feels greasy and looks shiny." },
     { value: "combination", label: "Combination", description: "I feel tightness on my cheeks, but my T-zone (nose & forehead) is oily or shiny." },
-    { value: "normal", label: "Normal", description: "My skin feels comfortable, not too oily, and not too dry." },
-    { value: "balanced", label: "Balanced", description: "My skin feels comfortable, not too oily, and not too dry." },
-    { value: "sensitive", label: "Sensitive", description: "My skin is easily irritated, red, or reactive to products." },
-    { value: "irritated", label: "Irritated", description: "My skin is currently experiencing irritation or inflammation." },
-    { value: "acne", label: "Acne-Prone", description: "My skin is prone to breakouts and acne." }
+    { value: "normal", label: "Normal", description: "My skin feels comfortable, not too oily, and not too dry." }
   ]
 
   return (
@@ -531,7 +651,7 @@ function SkinFeelStep({ value, onChange }: { value?: string, onChange: (value: s
 
 function MakeupUsageStep({ value, onChange }: { value?: string, onChange: (value: string) => void }) {
   const options = [
-    { value: "none", label: "I don't wear makeup" },
+    { value: "none", label: "I don&rsquo;t wear makeup" },
     { value: "eyes-only", label: "Eye areas only", description: "e.g., mascara, eyeshadow" },
     { value: "full-face", label: "Full face", description: "e.g., foundation, concealer, etc." }
   ]
