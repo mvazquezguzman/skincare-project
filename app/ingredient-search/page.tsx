@@ -12,6 +12,7 @@ import {
   SparklesIcon,
   HeartIcon,
 } from "@heroicons/react/24/outline"
+import jsonIngredients from "./scanalyze-skincare-ingredients.json"
 
 interface Ingredient {
   id: string
@@ -142,29 +143,121 @@ const ingredientsData: Ingredient[] = [
   },
 ]
 
-const categories = [
-  "All",
-  "Vitamin",
-  "Retinoid",
-  "Humectant",
-  "Antioxidant",
-  "Chemical Exfoliant",
-  "Barrier Repair",
-  "Anti-aging",
+// Transform JSON data to match Ingredient interface
+const transformJsonIngredient = (jsonItem: any): Ingredient => {
+  const name = jsonItem["Ingredient Name"]
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+  
+  // Map Safety Rating to sensitivity
+  const safetyRating = jsonItem["Safety Rating"]
+  let sensitivity: "Low" | "Medium" | "High" = "Low"
+  if (safetyRating === "Moderate Risk" || safetyRating === "Safe (in low %)") {
+    sensitivity = "Medium"
+  } else if (safetyRating === "High Risk") {
+    sensitivity = "High"
+  } else if (safetyRating === "Safe" || !safetyRating) {
+    sensitivity = "Low"
+  }
+
+  // Extract benefits from description
+  const description = jsonItem["Brief Description"] || ""
+  const functionType = jsonItem["Function"] || "Other"
+  
+  // Generate benefits from function and description
+  const benefits: string[] = []
+  if (functionType.includes("Humectant") || description.toLowerCase().includes("hydrat")) {
+    benefits.push("Hydration")
+  }
+  if (functionType.includes("Exfoliant") || description.toLowerCase().includes("exfoliat")) {
+    benefits.push("Exfoliation")
+  }
+  if (functionType.includes("Anti-aging") || description.toLowerCase().includes("aging") || description.toLowerCase().includes("wrinkle")) {
+    benefits.push("Anti-aging")
+  }
+  if (functionType.includes("Brightening") || description.toLowerCase().includes("brighten") || description.toLowerCase().includes("pigmentation")) {
+    benefits.push("Brightening")
+  }
+  if (functionType.includes("Soothing") || description.toLowerCase().includes("soothe") || description.toLowerCase().includes("calm")) {
+    benefits.push("Soothing")
+  }
+  if (functionType.includes("Antioxidant") || description.toLowerCase().includes("antioxidant") || description.toLowerCase().includes("protect")) {
+    benefits.push("Antioxidant Protection")
+  }
+  if (description.toLowerCase().includes("acne")) {
+    benefits.push("Acne Treatment")
+  }
+  if (benefits.length === 0) {
+    benefits.push(functionType)
+  }
+
+  return {
+    id,
+    name,
+    category: jsonItem["Category"] || functionType,
+    benefits,
+    description,
+    bestFor: [], // Can be enhanced later
+    pairsWith: [], // Can be enhanced later
+    avoidWith: [], // Can be enhanced later
+    concentration: "Varies",
+    whenToUse: "Both",
+    sensitivity,
+  }
+}
+
+// Transform and merge JSON ingredients with existing data
+const jsonIngredientsTransformed: Ingredient[] = jsonIngredients.map(transformJsonIngredient)
+
+// Create a map of existing ingredients by name (case-insensitive)
+const existingIngredientsMap = new Map(
+  ingredientsData.map(ing => [ing.name.toLowerCase(), ing])
+)
+
+// Merge: keep existing detailed data, add new from JSON
+const mergedIngredients: Ingredient[] = [
+  ...ingredientsData,
+  ...jsonIngredientsTransformed.filter(jsonIng => {
+    // Only add if not already in existing data
+    return !existingIngredientsMap.has(jsonIng.name.toLowerCase())
+  })
+]
+
+const normalizeCategoryName = (category?: string) => (category?.trim().toLowerCase() ?? "other")
+const getCategoryDisplayName = (category?: string) => category?.trim() || "Other"
+
+interface CategoryOption {
+  value: string
+  label: string
+}
+
+const categoryDisplayMap = new Map<string, string>()
+mergedIngredients.forEach((ingredient) => {
+  const normalized = normalizeCategoryName(ingredient.category)
+  if (!categoryDisplayMap.has(normalized)) {
+    categoryDisplayMap.set(normalized, getCategoryDisplayName(ingredient.category))
+  }
+})
+
+const categories: CategoryOption[] = [
+  { value: "all", label: "All" },
+  ...Array.from(categoryDisplayMap.entries())
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([value, label]) => ({ value, label })),
 ]
 
 export default function IngredientSearchPage() {
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("All")
+  const [selectedCategory, setSelectedCategory] = useState("all")
   const [selectedIngredient, setSelectedIngredient] = useState<Ingredient | null>(null)
 
   const filteredIngredients = useMemo(() => {
-    return ingredientsData.filter((ingredient) => {
+    return mergedIngredients.filter((ingredient) => {
       const matchesSearch =
         ingredient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ingredient.benefits.some((benefit) => benefit.toLowerCase().includes(searchTerm.toLowerCase())) ||
         ingredient.description.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesCategory = selectedCategory === "All" || ingredient.category === selectedCategory
+      const matchesCategory =
+        selectedCategory === "all" || normalizeCategoryName(ingredient.category) === selectedCategory
       return matchesSearch && matchesCategory
     })
   }, [searchTerm, selectedCategory])
@@ -187,79 +280,83 @@ export default function IngredientSearchPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
-          <div className="text-center space-y-4">
+          <div className="space-y-4">
             <h1 className="font-montserrat font-black text-3xl md:text-4xl text-foreground">Ingredient Search</h1>
-            <p className="font-open-sans text-lg text-muted-foreground max-w-2xl mx-auto">
+            <p className="font-open-sans text-lg text-muted-foreground max-w-2xl">
               Discover the science behind skincare ingredients and learn which combinations work best for your skin
             </p>
           </div>
 
           <div className="space-y-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  placeholder="Search ingredients, benefits, or concerns..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 font-open-sans"
-                />
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {categories.map((category) => (
-                  <Button
-                    key={category}
-                    variant={selectedCategory === category ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedCategory(category)}
-                    className="font-open-sans"
-                  >
-                    {category}
-                  </Button>
-                ))}
-              </div>
+            <div className="relative">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Input
+                placeholder="Search ingredients, benefits, or concerns..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 font-open-sans w-full rounded-lg border border-gray-200 bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="flex flex-nowrap md:flex-wrap gap-1.5 md:gap-2 overflow-x-auto pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+              {categories.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSelectedCategory(value)}
+                  className={`px-2 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap flex-shrink-0 ${
+                    selectedCategory === value
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 shadow-sm'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {filteredIngredients.map((ingredient) => (
                 <Card
                   key={ingredient.id}
-                  className="cursor-pointer hover:shadow-lg transition-all duration-300 border-border group"
+                  className="cursor-pointer hover:shadow-lg transition-all duration-300 border-border group h-full flex flex-col"
                   onClick={() => setSelectedIngredient(ingredient)}
                 >
                   <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <CardTitle className="font-montserrat font-bold text-lg text-foreground group-hover:text-primary transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="font-montserrat font-bold text-lg text-foreground group-hover:text-primary transition-colors flex-1">
                         {ingredient.name}
                       </CardTitle>
                       <Badge variant="outline" className={getSensitivityColor(ingredient.sensitivity)}>
                         {ingredient.sensitivity}
                       </Badge>
                     </div>
-                    <Badge variant="secondary" className="w-fit font-open-sans">
-                      {ingredient.category}
+                    <Badge variant="secondary" className="w-fit font-open-sans mt-2">
+                      {getCategoryDisplayName(ingredient.category)}
                     </Badge>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-3 flex-1 flex flex-col">
                     <p className="font-open-sans text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                       {ingredient.description}
                     </p>
-                    <div>
-                      <h4 className="font-open-sans font-medium text-sm text-foreground mb-2">Benefits:</h4>
-                      <div className="flex flex-wrap gap-1">
-                        {ingredient.benefits.slice(0, 3).map((benefit) => (
-                          <Badge key={benefit} variant="outline" className="text-xs font-open-sans">
-                            {benefit}
-                          </Badge>
-                        ))}
-                        {ingredient.benefits.length > 3 && (
-                          <Badge variant="outline" className="text-xs font-open-sans">
-                            +{ingredient.benefits.length - 3} more
-                          </Badge>
-                        )}
+                    {ingredient.benefits.length > 0 && (
+                      <div className="flex-1">
+                        <h4 className="font-open-sans font-medium text-sm text-foreground mb-2">Benefits:</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {ingredient.benefits.slice(0, 3).map((benefit) => (
+                            <Badge key={benefit} variant="outline" className="text-xs font-open-sans">
+                              {benefit}
+                            </Badge>
+                          ))}
+                          {ingredient.benefits.length > 3 && (
+                            <Badge variant="outline" className="text-xs font-open-sans">
+                              +{ingredient.benefits.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground font-open-sans">
+                    )}
+                    <div className="flex items-center justify-between text-xs text-muted-foreground font-open-sans pt-2 border-t border-border">
                       <span>Use: {ingredient.whenToUse}</span>
                       <span>{ingredient.concentration}</span>
                     </div>
@@ -292,7 +389,7 @@ export default function IngredientSearchPage() {
                     {selectedIngredient.name}
                   </CardTitle>
                   <Badge variant="secondary" className="mt-2 font-open-sans">
-                    {selectedIngredient.category}
+                    {getCategoryDisplayName(selectedIngredient.category)}
                   </Badge>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedIngredient(null)}>
@@ -310,11 +407,15 @@ export default function IngredientSearchPage() {
                     Benefits
                   </h4>
                   <div className="space-y-2">
-                    {selectedIngredient.benefits.map((benefit) => (
-                      <Badge key={benefit} variant="outline" className="mr-2 mb-2 font-open-sans">
-                        {benefit}
-                      </Badge>
-                    ))}
+                    {selectedIngredient.benefits.length > 0 ? (
+                      selectedIngredient.benefits.map((benefit) => (
+                        <Badge key={benefit} variant="outline" className="mr-2 mb-2 font-open-sans">
+                          {benefit}
+                        </Badge>
+                      ))
+                    ) : (
+                      <div className="font-open-sans text-sm text-muted-foreground">No benefits listed</div>
+                    )}
                   </div>
                 </div>
 
@@ -324,11 +425,15 @@ export default function IngredientSearchPage() {
                     Best For
                   </h4>
                   <div className="space-y-2">
-                    {selectedIngredient.bestFor.map((condition) => (
-                      <Badge key={condition} variant="secondary" className="mr-2 mb-2 font-open-sans">
-                        {condition}
-                      </Badge>
-                    ))}
+                    {selectedIngredient.bestFor.length > 0 ? (
+                      selectedIngredient.bestFor.map((condition) => (
+                        <Badge key={condition} variant="secondary" className="mr-2 mb-2 font-open-sans">
+                          {condition}
+                        </Badge>
+                      ))
+                    ) : (
+                      <div className="font-open-sans text-sm text-muted-foreground">Suitable for all skin types</div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -340,14 +445,18 @@ export default function IngredientSearchPage() {
                     Pairs Well With
                   </h4>
                   <div className="space-y-1">
-                    {selectedIngredient.pairsWith.map((ingredient) => (
-                      <div
-                        key={ingredient}
-                        className="font-open-sans text-sm text-green-600 bg-green-50 px-2 py-1 rounded"
-                      >
-                        {ingredient}
-                      </div>
-                    ))}
+                    {selectedIngredient.pairsWith.length > 0 ? (
+                      selectedIngredient.pairsWith.map((ingredient) => (
+                        <div
+                          key={ingredient}
+                          className="font-open-sans text-sm text-green-600 bg-green-50 px-2 py-1 rounded"
+                        >
+                          {ingredient}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="font-open-sans text-sm text-muted-foreground">No specific pairing information</div>
+                    )}
                   </div>
                 </div>
 
