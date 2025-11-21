@@ -5,6 +5,8 @@ SkinWise is an intelligent skincare companion that empowers users to build perso
 
 Whether you're dealing with acne, aging, dryness, or sensitivity, SkinWise creates tailored morning and evening routines that adapt to your skin type, concerns, and goals. The platform combines advanced ingredient compatibility checking with AI-driven routine analysis to ensure your skincare products work together effectively and safely.
 
+This project or part of this project was developed as part of the SD Capstone course at GGC under Dr. B.
+
 ---
 
 ## Features
