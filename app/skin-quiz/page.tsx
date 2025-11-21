@@ -651,7 +651,7 @@ function SkinFeelStep({ value, onChange }: { value?: string, onChange: (value: s
 
 function MakeupUsageStep({ value, onChange }: { value?: string, onChange: (value: string) => void }) {
   const options = [
-    { value: "none", label: "I don&rsquo;t wear makeup" },
+    { value: "none", label: "I don't wear makeup" },
     { value: "eyes-only", label: "Eye areas only", description: "e.g., mascara, eyeshadow" },
     { value: "full-face", label: "Full face", description: "e.g., foundation, concealer, etc." }
   ]
