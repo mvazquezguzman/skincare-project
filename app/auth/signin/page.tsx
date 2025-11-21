@@ -80,7 +80,7 @@ export default function SignInPage() {
             <div className="text-center mb-6">
               <div className="flex items-center justify-center space-x-3 mb-4">
                 <SparklesIcon className="h-8 w-8 text-primary" />
-                <h1 className="font-montserrat font-black text-2xl text-foreground">SkinWise</h1>
+                <h1 className="font-playfair font-black text-2xl text-foreground">SkinWise</h1>
               </div>
               <h2 className="font-montserrat font-bold text-xl text-foreground mb-2">Welcome Back!</h2>
               <p className="font-open-sans text-muted-foreground">Sign In to Continue Your Skincare Journey.</p>
@@ -141,7 +141,7 @@ export default function SignInPage() {
             </form>
 
             <div className="mt-6 pt-6 border-t border-border">
-              <p className="font-open-sans text-sm text-muted-foreground text-center">Don't have an account?{" "}
+              <p className="font-open-sans text-sm text-muted-foreground text-center">Don&rsquo;t have an account?{" "}
                 <Link href="/auth/signup" className="text-primary hover:text-primary/80 font-medium">Sign Up</Link>
               </p>
             </div>

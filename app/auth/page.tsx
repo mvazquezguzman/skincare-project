@@ -36,7 +36,7 @@ export default function AuthPage() {
             <div className="text-center">
               <div className="flex items-center justify-center space-x-3 mb-4">
                 <SparklesIcon className="h-8 w-8 text-primary" />
-                <h1 className="font-montserrat font-black text-2xl text-foreground">SkinWise</h1>
+                <h1 className="font-playfair font-black text-2xl text-foreground">SkinWise</h1>
               </div>
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
               <p className="text-muted-foreground">Redirecting...</p>

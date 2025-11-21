@@ -98,7 +98,7 @@ export default function SignUpPage() {
             <div className="text-center mb-6">
               <div className="flex items-center justify-center space-x-3 mb-4">
                 <SparklesIcon className="h-8 w-8 text-primary" />
-                <h1 className="font-montserrat font-black text-2xl text-foreground">SkinWise</h1>
+                <h1 className="font-playfair font-black text-2xl text-foreground">SkinWise</h1>
               </div>
               <h2 className="font-montserrat font-bold text-xl text-foreground mb-2">Get Started Today</h2>
               <p className="font-open-sans text-muted-foreground">Join Now to Start Your Skincare Journey!</p>
