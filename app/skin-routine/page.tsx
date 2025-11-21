@@ -1,52 +1,90 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Progress } from "@/components/ui/progress"
 import { useAuth } from "@/contexts/AuthContext"
 import { supabase } from "@/lib/supabase"
+import { UserProfile, RoutineStep } from "@/lib/profile-types"
+import { getUserProfile, saveUserProfile, parseArrayField } from "@/lib/profile-utils"
+import { getCurrentRoutine, saveRoutineVersion } from "@/lib/routine-service"
+import { extractExcludeProductIds, extractProductIdsFromStep, extractProductIdFromIdentifier } from "@/lib/routine-helpers"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import LoadingState from "@/components/profile/LoadingState"
+import AuthDenied from "@/components/profile/AuthDenied"
+import PageHeader from "@/components/routine/PageHeader"
+import ProfileSummary from "@/components/routine/ProfileSummary"
+import RoutineGeneratorButton from "@/components/routine/RoutineGeneratorButton"
+import RoutineDisplay from "@/components/routine/RoutineDisplay"
+import RoutineAnalyzer from "@/components/routine/RoutineAnalyzer"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
-import {
-  SunIcon,
-  MoonIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  SparklesIcon,
-  ArrowLeftIcon,
-  XMarkIcon,
-  CalendarIcon,
-  ChartBarIcon,
-  ClipboardDocumentListIcon,
-  UserIcon,
-  PencilIcon,
-} from "@heroicons/react/24/outline"
 
-const RoutineBuilder = () => {
-  const { user, isAuthenticated } = useAuth()
-  const [skinProfile, setSkinProfile] = useState<Partial<SkinProfile>>({})
-  const [customRoutine, setCustomRoutine] = useState<{
+export default function SkinRoutinePage() {
+  const { user, isAuthenticated, isLoading } = useAuth()
+  const router = useRouter()
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [generatedRoutine, setGeneratedRoutine] = useState<{
     morning: RoutineStep[]
     evening: RoutineStep[]
-  }>({
-    morning: [],
-    evening: [],
-  })
-  const [showResults, setShowResults] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [profileLoaded, setProfileLoaded] = useState(false)
+  } | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState<"morning" | "evening">("morning")
+  const [activeMainTab, setActiveMainTab] = useState("builder")
+  const [error, setError] = useState<string | null>(null)
+  const [authCheckComplete, setAuthCheckComplete] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<any>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [regeneratingStepId, setRegeneratingStepId] = useState<string | null>(null)
+  const [currentRoutineId, setCurrentRoutineId] = useState<string | null>(null)
+  const [isSavingAnalysis, setIsSavingAnalysis] = useState(false)
+  const [isAnalysisSaved, setIsAnalysisSaved] = useState(false)
 
-  // Fetch user's existing skin profile
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      if (!isAuthenticated || !user) return
+    const timer = setTimeout(() => {
+      setAuthCheckComplete(true)
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Refresh routine when switching to analyzer tab
+  useEffect(() => {
+    const refreshRoutine = async () => {
+      if (!user || activeMainTab !== "analyzer" || !profile) return
 
       try {
+        const userRoutine = await getCurrentRoutine(user.id)
+        if (userRoutine && userRoutine.routine) {
+          const updatedProfile = {
+            ...profile,
+            currentRoutine: {
+              morning: userRoutine.routine.morning || [],
+              evening: userRoutine.routine.evening || []
+            }
+          }
+          saveUserProfile(updatedProfile)
+          setProfile(updatedProfile)
+        }
+      } catch (error) {
+        console.error('Error refreshing routine:', error)
+      }
+    }
+
+    refreshRoutine()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMainTab, user?.id])
+
+  useEffect(() => {
+    const initializeProfile = async () => {
+      if (!user) return
+
+      try {
+        // Fetch user profile from database
         const { data: dbProfile, error } = await supabase
           .from('users')
-          .select('skin_type, skin_concerns, skin_goals, allergies')
+          .select('*')
           .eq('id', user.id)
           .single()
 
@@ -55,524 +93,551 @@ const RoutineBuilder = () => {
           return
         }
 
-        if (dbProfile) {
-          const userProfile: Partial<SkinProfile> = {
-            skinType: dbProfile.skin_type,
-            concerns: dbProfile.skin_concerns ? (Array.isArray(dbProfile.skin_concerns) ? dbProfile.skin_concerns : JSON.parse(dbProfile.skin_concerns)) : [],
-            goals: dbProfile.skin_goals ? (Array.isArray(dbProfile.skin_goals) ? dbProfile.skin_goals : JSON.parse(dbProfile.skin_goals)) : [],
-            allergies: dbProfile.allergies ? (Array.isArray(dbProfile.allergies) ? dbProfile.allergies : JSON.parse(dbProfile.allergies)) : [],
+        // Fetch current routine from database
+        let currentRoutine: { morning: RoutineStep[]; evening: RoutineStep[] } = { morning: [], evening: [] }
+        try {
+          const userRoutine = await getCurrentRoutine(user.id)
+          if (userRoutine && userRoutine.routine) {
+            currentRoutine = {
+              morning: userRoutine.routine.morning || [],
+              evening: userRoutine.routine.evening || []
+            }
           }
-          setSkinProfile(userProfile)
-          setProfileLoaded(true)
-          // Auto-generate routine based on existing profile
-          generateRoutine(userProfile)
+        } catch (error) {
+          console.error('Error fetching current routine:', error)
+          // Fallback to empty routine if fetch fails
         }
+
+        // Create profile from database data
+        const userProfile: UserProfile = {
+          id: user.id,
+          name: `${user.firstName} ${user.lastName}`,
+          bio: dbProfile.bio || undefined,
+          city: dbProfile.city || undefined,
+          skinType: dbProfile.skin_type as UserProfile["skinType"] || null,
+          skinConcerns: parseArrayField(dbProfile.skin_concerns),
+          skinGoals: parseArrayField(dbProfile.skin_goals),
+          allergies: parseArrayField(dbProfile.allergies || dbProfile.ingredient_preferences),
+          budgetRange: dbProfile.budget_range || undefined,
+          currentRoutine: currentRoutine
+        }
+
+        // Check for extra quiz data in localStorage
+        try {
+          const extraData = localStorage.getItem('skinwise-quiz-extra-data')
+          if (extraData) {
+            const parsedExtraData = JSON.parse(extraData)
+            if (parsedExtraData.ingredientPreferences?.length > 0) {
+              userProfile.allergies = [...userProfile.allergies, ...parsedExtraData.ingredientPreferences]
+            }
+            if (parsedExtraData.budgetRange && !userProfile.budgetRange) {
+              userProfile.budgetRange = parsedExtraData.budgetRange
+            }
+          }
+        } catch {
+          // No extra quiz data found
+        }
+        
+        saveUserProfile(userProfile)
+        setProfile(userProfile)
       } catch (error) {
-        console.error('Error fetching user profile:', error)
-      } finally {
-        setIsLoading(false)
+        console.error('Error initializing profile:', error)
+        // Fallback to localStorage if database fails
+        const userProfile = getUserProfile()
+        if (userProfile) {
+          setProfile(userProfile)
+        }
       }
     }
 
     if (isAuthenticated && user) {
-      fetchUserProfile()
+      initializeProfile()
     }
-  }, [isAuthenticated, user])
+  }, [user, isAuthenticated])
 
-  const generateRoutine = (profile?: Partial<SkinProfile>) => {
-    const userProfile = profile || skinProfile
-    // Simple routine generation logic based on skin profile
-    const morningRoutine = [...routineSteps.morning]
-    const eveningRoutine = [...routineSteps.evening]
+  const handleGenerateRoutine = async () => {
+    if (!profile) return
 
-    // Customize based on skin type and concerns
-    if (userProfile.skinType === "oily") {
-      morningRoutine[1] = {
-        ...morningRoutine[1],
-        name: "Niacinamide Serum",
-        ingredient: "Niacinamide",
-        description: "Control oil production and minimize pores",
+    setIsGenerating(true)
+    setError(null)
+
+    try {
+      const excludeProductIds = extractExcludeProductIds(generatedRoutine)
+
+      const response = await fetch('/api/generate-routine', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          excludeProductIds: excludeProductIds.length > 0 ? excludeProductIds : undefined
+        })
+      })
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to generate routine'
+        try {
+          const data = await response.json()
+          errorMessage = data.error || errorMessage
+        } catch (e) {
+          // If response is not JSON (e.g., HTML error page), use status text
+          errorMessage = response.statusText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+
+      const data = await response.json()
+      setGeneratedRoutine(data.routine)
+    } catch (error) {
+      console.error('Error generating routine:', error)
+      setError(error instanceof Error ? error.message : 'Failed to generate routine')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const handleSaveRoutine = async () => {
+    if (!profile || !generatedRoutine || !user) return
+
+    setIsSaving(true)
+    setError(null)
+    
+    try {
+      // Save routine to database
+      await saveRoutineVersion(user.id, generatedRoutine)
+      
+      // Also update local profile for consistency
+      const updatedProfile = {
+        ...profile,
+        currentRoutine: generatedRoutine
+      }
+      
+      saveUserProfile(updatedProfile)
+      setProfile(updatedProfile)
+      
+      // Redirect to profile page
+      router.push('/user-profile')
+    } catch (error) {
+      console.error('Error saving routine:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save routine. Please try again.'
+      setError(errorMessage)
+      alert(errorMessage)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleAnalyzeRoutine = async () => {
+    if (!profile || !user) return
+
+    setIsAnalyzing(true)
+    setAnalysisError(null)
+    setAnalysisResult(null)
+    setIsAnalysisSaved(false)
+
+    try {
+      const response = await fetch('/api/analyze-routine', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to analyze routine'
+        try {
+          const data = await response.json()
+          errorMessage = data.error || errorMessage
+        } catch (e) {
+          errorMessage = response.statusText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+
+      const data = await response.json()
+      // Extract routineId from response if present
+      if (data.routineId) {
+        setCurrentRoutineId(data.routineId)
+      }
+      // Remove routineId from analysis result before storing
+      const { routineId, ...analysisData } = data
+      setAnalysisResult(analysisData)
+    } catch (error) {
+      console.error('Error analyzing routine:', error)
+      setAnalysisError(error instanceof Error ? error.message : 'Failed to analyze routine')
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  const handleSaveAnalysis = async () => {
+    if (!analysisResult || !currentRoutineId || !user) return
+
+    setIsSavingAnalysis(true)
+    setAnalysisError(null)
+
+    try {
+      const response = await fetch('/api/save-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          routineId: currentRoutineId,
+          analysisResult: analysisResult
+        })
+      })
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to save analysis'
+        try {
+          const data = await response.json()
+          errorMessage = data.error || errorMessage
+        } catch (e) {
+          errorMessage = response.statusText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+
+      setIsAnalysisSaved(true)
+    } catch (error) {
+      console.error('Error saving analysis:', error)
+      setAnalysisError(error instanceof Error ? error.message : 'Failed to save analysis')
+      alert(error instanceof Error ? error.message : 'Failed to save analysis')
+    } finally {
+      setIsSavingAnalysis(false)
+    }
+  }
+
+  const handleRemoveProduct = async (stepId: string, productId: string, timeOfDay: "morning" | "evening") => {
+    if (!generatedRoutine || !profile) return
+
+    // Find the step
+    const steps = generatedRoutine[timeOfDay]
+    const step = steps.find(s => s.id === stepId)
+    if (!step) return
+
+    // Get all product IDs from the step to exclude them
+    const stepProductIds = extractProductIdsFromStep(step)
+    const removedProductIds = extractProductIdFromIdentifier(productId)
+    
+    // Combine all product IDs to exclude (all products in step + the removed product)
+    const excludeProductIds = [...stepProductIds, ...removedProductIds]
+
+    // Regenerate the step
+    await handleRegenerateStep(stepId, timeOfDay, excludeProductIds)
+  }
+
+  const handleSelectProduct = (stepId: string, productId: string, timeOfDay: "morning" | "evening") => {
+    if (!generatedRoutine) return
+
+    const steps = generatedRoutine[timeOfDay]
+    const step = steps.find(s => s.id === stepId)
+    if (!step) return
+
+    // Get products array
+    const products = (step as any).products || []
+    if (products.length === 0) return
+
+    // Find the selected product
+    const getProductIdentifier = (product: any) => {
+      if (product.id) return product.id
+      if (product.brand && product.productName) {
+        return `${product.brand}-${product.productName}`
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '')
+          .trim()
+      }
+      return product.productName || ''
+    }
+
+    const selectedProductIndex = products.findIndex((p: any) => getProductIdentifier(p) === productId)
+    if (selectedProductIndex === -1) return
+
+    // Reorder products: move selected product to the front
+    const reorderedProducts = [
+      products[selectedProductIndex],
+      ...products.filter((_: any, index: number) => index !== selectedProductIndex)
+    ]
+
+    // Update the step with reordered products
+    const updatedStep = {
+      ...step,
+      products: reorderedProducts,
+      // Update legacy fields to match the selected product
+      productName: reorderedProducts[0].productName,
+      brand: reorderedProducts[0].brand,
+      price: reorderedProducts[0].price,
+      imageUrl: reorderedProducts[0].imageUrl,
+      productURL: reorderedProducts[0].productURL,
+      description: reorderedProducts[0].description
+    }
+
+    // Update the routine for the current time of day
+    let updatedRoutine = {
+      ...generatedRoutine,
+      [timeOfDay]: steps.map(s => s.id === stepId ? updatedStep : s)
+    }
+
+    // If selecting in morning routine, also update the corresponding evening step
+    // Categories that are shared: cleanser, toner, serum, moisturizer
+    const sharedCategories = ['cleanser', 'toner', 'serum', 'moisturizer']
+    if (timeOfDay === 'morning' && sharedCategories.includes(step.category)) {
+      const eveningSteps = generatedRoutine.evening
+      const correspondingEveningStep = eveningSteps.find(s => s.category === step.category)
+      
+      if (correspondingEveningStep) {
+        const eveningProducts = (correspondingEveningStep as any).products || []
+        const selectedProduct = reorderedProducts[0] // The product that was just selected in morning
+        
+        // Find the selected product in the evening step by matching identifier
+        const selectedProductId = getProductIdentifier(selectedProduct)
+        const eveningProductIndex = eveningProducts.findIndex((p: any) => 
+          getProductIdentifier(p) === selectedProductId
+        )
+        
+        let updatedEveningProducts: any[]
+        
+        if (eveningProductIndex >= 0) {
+          // Product exists in evening - move it to the front
+          updatedEveningProducts = [
+            eveningProducts[eveningProductIndex],
+            ...eveningProducts.filter((_: any, index: number) => index !== eveningProductIndex)
+          ]
+        } else if (eveningProducts.length === 0) {
+          // No products in evening yet - copy from morning
+          updatedEveningProducts = [...reorderedProducts]
+        } else {
+          // Product doesn't exist in evening, but evening has products
+          // Check if they have the same product set (just different order)
+          const getProductIdSet = (prods: any[]) => {
+            return new Set(prods.map((p: any) => getProductIdentifier(p)))
+          }
+          
+          const morningProductIds = getProductIdSet(reorderedProducts)
+          const eveningProductIds = getProductIdSet(eveningProducts)
+          
+          const hasSameProductSet = morningProductIds.size === eveningProductIds.size &&
+            Array.from(morningProductIds).every(id => eveningProductIds.has(id))
+          
+          if (hasSameProductSet) {
+            // Same products, just sync the order from morning
+            updatedEveningProducts = [...reorderedProducts]
+          } else {
+            // Different products - keep evening products but try to match the selected one
+            // For now, just keep evening as is (user can manually select if needed)
+            updatedEveningProducts = eveningProducts
+          }
+        }
+        
+        // Update the evening step with the reordered products
+        const updatedEveningStep = {
+          ...correspondingEveningStep,
+          products: updatedEveningProducts,
+          // Update legacy fields to match the selected product (first in array)
+          productName: updatedEveningProducts[0]?.productName || correspondingEveningStep.productName,
+          brand: updatedEveningProducts[0]?.brand || correspondingEveningStep.brand,
+          price: updatedEveningProducts[0]?.price || correspondingEveningStep.price,
+          imageUrl: updatedEveningProducts[0]?.imageUrl || correspondingEveningStep.imageUrl,
+          productURL: updatedEveningProducts[0]?.productURL || correspondingEveningStep.productURL,
+          description: updatedEveningProducts[0]?.description || correspondingEveningStep.description
+        }
+
+        updatedRoutine = {
+          ...updatedRoutine,
+          evening: eveningSteps.map(s => s.id === correspondingEveningStep.id ? updatedEveningStep : s)
+        }
       }
     }
 
-    if (userProfile.concerns?.includes("Active Acne Breakouts") || userProfile.concerns?.includes("Help Prevent New Acne")) {
-      eveningRoutine[1] = {
-        ...eveningRoutine[1],
-        name: "BHA Treatment",
-        ingredient: "Salicylic Acid",
-        description: "Unclog pores and treat acne",
+    setGeneratedRoutine(updatedRoutine)
+  }
+
+  const handleRegenerateStep = async (
+    stepId: string, 
+    timeOfDay: "morning" | "evening",
+    excludeProductIds?: string[]
+  ) => {
+    if (!generatedRoutine || !profile) return
+
+    setRegeneratingStepId(stepId)
+    setError(null)
+
+    try {
+      // Find the step to get its category
+      const steps = generatedRoutine[timeOfDay]
+      const step = steps.find(s => s.id === stepId)
+      if (!step) {
+        throw new Error('Step not found')
       }
-    }
 
-    if (userProfile.skinType === "sensitive") {
-      eveningRoutine[1] = {
-        ...eveningRoutine[1],
-        frequency: "2x per week",
-        description: "Start slowly to build tolerance",
+      // If excludeProductIds not provided, get all products from the step
+      let excludeIds = excludeProductIds
+      if (!excludeIds) {
+        excludeIds = extractProductIdsFromStep(step)
       }
+
+      // Call the regenerate step API
+      const response = await fetch('/api/regenerate-step', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          stepId,
+          category: step.category,
+          timeOfDay,
+          excludeProductIds: excludeIds,
+          originalStepNumber: step.step,
+          originalStepId: step.id
+        })
+      })
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to regenerate step'
+        try {
+          const data = await response.json()
+          errorMessage = data.error || errorMessage
+        } catch (e) {
+          errorMessage = response.statusText || errorMessage
+        }
+        throw new Error(errorMessage)
+      }
+
+      const data = await response.json()
+      const regeneratedStep = data.step
+
+      // Update the routine with the regenerated step
+      let updatedRoutine = {
+        ...generatedRoutine,
+        [timeOfDay]: steps.map(s => s.id === stepId ? regeneratedStep : s)
+      }
+
+      // If regenerating in morning routine, also update the corresponding evening step
+      // Categories that are shared: cleanser, toner, serum, moisturizer
+      const sharedCategories = ['cleanser', 'toner', 'serum', 'moisturizer']
+      if (timeOfDay === 'morning' && sharedCategories.includes(step.category)) {
+        const eveningSteps = generatedRoutine.evening
+        const correspondingEveningStep = eveningSteps.find(s => s.category === step.category)
+        
+        if (correspondingEveningStep) {
+          // Copy the regenerated morning step's products to evening to keep them in sync
+          const syncedEveningStep = {
+            ...correspondingEveningStep,
+            products: regeneratedStep.products, // Use morning's regenerated products
+            // Update legacy fields to match morning's selected product
+            productName: regeneratedStep.productName,
+            brand: regeneratedStep.brand,
+            price: regeneratedStep.price,
+            imageUrl: regeneratedStep.imageUrl,
+            productURL: regeneratedStep.productURL,
+            description: regeneratedStep.description
+          }
+          
+          updatedRoutine = {
+            ...updatedRoutine,
+            evening: eveningSteps.map(s => s.id === correspondingEveningStep.id ? syncedEveningStep : s)
+          }
+        }
+      }
+
+      setGeneratedRoutine(updatedRoutine)
+    } catch (error) {
+      console.error('Error regenerating step:', error)
+      setError(error instanceof Error ? error.message : 'Failed to regenerate step')
+    } finally {
+      setRegeneratingStepId(null)
     }
-
-    setCustomRoutine({
-      morning: morningRoutine,
-      evening: eveningRoutine,
-    })
-    setShowResults(true)
   }
 
-  const removeStep = (timeOfDay: "morning" | "evening", stepId: string) => {
-    setCustomRoutine((prev) => ({
-      ...prev,
-      [timeOfDay]: prev[timeOfDay].filter((step) => step.id !== stepId),
-    }))
+  // Show loading while authentication is being checked
+  if (isLoading || !authCheckComplete) {
+    return <LoadingState />
   }
 
-  if (showResults) {
+  // Check authentication
+  if (!isAuthenticated) {
+    return <AuthDenied />
+  }
+
+  if (!profile) {
     return (
-      <div className="min-h-screen bg-background">
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="space-y-8">
-            <div className="text-center space-y-4">
-              <div className="flex justify-center mb-4">
-                <SparklesIcon className="h-12 w-12 text-primary" />
-              </div>
-              <h1 className="font-montserrat font-black text-3xl md:text-4xl text-foreground">
-                Your Personalized Routine
-              </h1>
-              <p className="font-open-sans text-lg text-muted-foreground max-w-2xl mx-auto">
-                Based on your skin profile, here's a customized routine designed just for you
-              </p>
-            </div>
-
-            <Tabs defaultValue="morning" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="morning" className="font-open-sans flex items-center gap-2">
-                  <SunIcon className="h-4 w-4" />
-                  Morning Routine
-                </TabsTrigger>
-                <TabsTrigger value="evening" className="font-open-sans flex items-center gap-2">
-                  <MoonIcon className="h-4 w-4" />
-                  Evening Routine
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="morning" className="space-y-4">
-                {customRoutine.morning.map((step, index) => (
-                  <Card key={step.id} className="border-border">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-montserrat font-bold text-sm">
-                            {index + 1}
-                          </div>
-                          <div>
-                            <CardTitle className="font-montserrat font-bold text-lg text-foreground">
-                              {step.name}
-                            </CardTitle>
-                            <Badge variant="outline" className="font-open-sans">
-                              {step.category}
-                            </Badge>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeStep("morning", step.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <XMarkIcon className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <p className="font-open-sans text-muted-foreground leading-relaxed">{step.description}</p>
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <ClockIcon className="h-4 w-4" />
-                            <span className="font-open-sans">{step.timing}</span>
-                          </div>
-                          <Badge variant="secondary" className="font-open-sans">
-                            {step.ingredient}
-                          </Badge>
-                        </div>
-                        <span className="font-open-sans text-muted-foreground">{step.frequency}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </TabsContent>
-
-              <TabsContent value="evening" className="space-y-4">
-                {customRoutine.evening.map((step, index) => (
-                  <Card key={step.id} className="border-border">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-secondary text-secondary-foreground rounded-full flex items-center justify-center font-montserrat font-bold text-sm">
-                            {index + 1}
-                          </div>
-                          <div>
-                            <CardTitle className="font-montserrat font-bold text-lg text-foreground">
-                              {step.name}
-                            </CardTitle>
-                            <Badge variant="outline" className="font-open-sans">
-                              {step.category}
-                            </Badge>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeStep("evening", step.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <XMarkIcon className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <p className="font-open-sans text-muted-foreground leading-relaxed">{step.description}</p>
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <ClockIcon className="h-4 w-4" />
-                            <span className="font-open-sans">{step.timing}</span>
-                          </div>
-                          <Badge variant="secondary" className="font-open-sans">
-                            {step.ingredient}
-                          </Badge>
-                        </div>
-                        <span className="font-open-sans text-muted-foreground">{step.frequency}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </TabsContent>
-            </Tabs>
-
-            <div className="flex justify-center gap-4">
-              <Button variant="outline" onClick={() => setShowResults(false)} className="font-open-sans">
-                <ArrowLeftIcon className="mr-2 h-4 w-4" />
-                Modify Routine
-              </Button>
-              <Button className="font-open-sans">
-                Save Routine
-                <CheckCircleIcon className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <main className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-              <p className="font-open-sans text-muted-foreground">Loading your skin profile...</p>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  // No profile data - redirect to skin quiz
-  if (!profileLoaded || !skinProfile.skinType) {
-    return (
-      <div className="min-h-screen bg-background">
-        <main className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center space-y-6">
-            <div className="flex justify-center mb-4">
-              <UserIcon className="h-12 w-12 text-primary" />
-            </div>
-            <h2 className="font-montserrat font-black text-2xl text-foreground">Complete Your Skin Profile</h2>
-            <p className="font-open-sans text-muted-foreground">
-              To get your personalized routine, we need to know more about your skin. Complete your skin profile first.
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <p className="text-muted-foreground mb-4">
+              Please complete your skin profile first.
             </p>
-            <div className="space-y-4">
-              <Button asChild size="lg" className="font-open-sans">
-                <Link href="/skin-quiz">Take Skin Quiz</Link>
-              </Button>
-              <div>
-                <Button asChild variant="outline" className="font-open-sans">
-                  <Link href="/user-profile">View Profile</Link>
-                </Button>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  return (
-    <div className="min-h-screen bg-background">
-      <main className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
-          <div className="text-center space-y-4">
-            <h2 className="font-montserrat font-black text-2xl text-foreground">Your Personalized Routine</h2>
-            <p className="font-open-sans text-muted-foreground">
-              Based on your skin profile, here's your customized routine
-            </p>
-          </div>
-
-          {/* Profile Summary */}
-          <Card className="border-border">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="font-montserrat font-bold text-xl text-foreground">Your Skin Profile</CardTitle>
-                <Button asChild variant="outline" size="sm" className="font-open-sans">
-                  <Link href="/skin-quiz">
-                    <PencilIcon className="mr-2 h-4 w-4" />
-                    Update Profile
-                  </Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-montserrat font-bold text-sm text-foreground mb-2">Skin Type</h4>
-                  <Badge variant="secondary" className="font-open-sans capitalize">
-                    {skinProfile.skinType}
-                  </Badge>
-                </div>
-                <div>
-                  <h4 className="font-montserrat font-bold text-sm text-foreground mb-2">Allergies/Preferences</h4>
-                  <div className="flex flex-wrap gap-1">
-                    {skinProfile.allergies?.slice(0, 2).map((allergy) => (
-                      <Badge key={allergy} variant="outline" className="font-open-sans text-xs">
-                        {allergy}
-                      </Badge>
-                    ))}
-                    {skinProfile.allergies && skinProfile.allergies.length > 2 && (
-                      <Badge variant="outline" className="font-open-sans text-xs">
-                        +{skinProfile.allergies.length - 2} more
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div>
-                <h4 className="font-montserrat font-bold text-sm text-foreground mb-2">Main Concerns</h4>
-                <div className="flex flex-wrap gap-2">
-                  {skinProfile.concerns?.map((concern) => (
-                    <Badge key={concern} variant="outline" className="font-open-sans">
-                      {concern}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              {skinProfile.goals && skinProfile.goals.length > 0 && (
-                <div>
-                  <h4 className="font-montserrat font-bold text-sm text-foreground mb-2">Goals</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {skinProfile.goals.map((goal) => (
-                      <Badge key={goal} variant="outline" className="font-open-sans">
-                        {goal}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="text-center">
-            <Button 
-              onClick={() => generateRoutine()} 
-              size="lg" 
-              className="font-open-sans"
-            >
-              <SparklesIcon className="mr-2 h-5 w-5" />
-              Generate My Routine
+            <Button asChild>
+              <Link href="/skin-quiz">Complete Skin Quiz</Link>
             </Button>
-          </div>
-        </div>
-      </main>
-    </div>
-  )
-}
-
-const AdvancedRoutine = () => {
-  return (
-    <div className="space-y-6">
-      <div className="text-center space-y-4">
-        <h2 className="font-montserrat font-black text-2xl text-foreground">Advanced Routine Generator</h2>
-        <p className="font-open-sans text-muted-foreground">
-          Create detailed 4-step routines with comprehensive ingredient analysis
-        </p>
+          </CardContent>
+        </Card>
       </div>
-      <div className="bg-muted/50 rounded-lg p-6 text-center">
-        <p className="font-open-sans text-muted-foreground">Advanced routine generator coming soon...</p>
-      </div>
-    </div>
-  )
-}
-
-const RoutineAnalyzer = () => {
-  return (
-    <div className="space-y-6">
-      <div className="text-center space-y-4">
-        <h2 className="font-montserrat font-black text-2xl text-foreground">Routine Analyzer</h2>
-        <p className="font-open-sans text-muted-foreground">
-          Analyze your current routine for conflicts and improvements
-        </p>
-      </div>
-      <div className="bg-muted/50 rounded-lg p-6 text-center">
-        <p className="font-open-sans text-muted-foreground">Routine analyzer coming soon...</p>
-      </div>
-    </div>
-  )
-}
-
-interface SkinProfile {
-  skinType: string
-  concerns: string[]
-  goals: string[]
-  allergies: string[]
-}
-
-interface RoutineStep {
-  id: string
-  name: string
-  category: string
-  ingredient: string
-  description: string
-  timing: string
-  order: number
-  frequency: string
-}
-
-// Removed unused constants - now using data from user's existing profile
-
-const routineSteps: { [key: string]: RoutineStep[] } = {
-  morning: [
-    {
-      id: "cleanser-am",
-      name: "Gentle Cleanser",
-      category: "Cleanser",
-      ingredient: "Ceramides",
-      description: "Start with a gentle cleanser to remove overnight buildup",
-      timing: "1-2 minutes",
-      order: 1,
-      frequency: "Daily",
-    },
-    {
-      id: "vitamin-c",
-      name: "Vitamin C Serum",
-      category: "Treatment",
-      ingredient: "Vitamin C",
-      description: "Antioxidant protection and brightening",
-      timing: "Wait 10-15 minutes",
-      order: 2,
-      frequency: "Daily",
-    },
-    {
-      id: "moisturizer-am",
-      name: "Lightweight Moisturizer",
-      category: "Moisturizer",
-      ingredient: "Hyaluronic Acid",
-      description: "Hydrate and prep skin for sunscreen",
-      timing: "2-3 minutes",
-      order: 3,
-      frequency: "Daily",
-    },
-    {
-      id: "sunscreen",
-      name: "Broad Spectrum SPF 30+",
-      category: "Sun Protection",
-      ingredient: "Zinc Oxide",
-      description: "Essential daily protection from UV damage",
-      timing: "Apply generously",
-      order: 4,
-      frequency: "Daily",
-    },
-  ],
-  evening: [
-    {
-      id: "cleanser-pm",
-      name: "Double Cleanse",
-      category: "Cleanser",
-      ingredient: "Salicylic Acid",
-      description: "Remove makeup, sunscreen, and daily buildup",
-      timing: "2-3 minutes each step",
-      order: 1,
-      frequency: "Daily",
-    },
-    {
-      id: "treatment",
-      name: "Active Treatment",
-      category: "Treatment",
-      ingredient: "Retinol",
-      description: "Target specific concerns with active ingredients",
-      timing: "Wait 20-30 minutes",
-      order: 2,
-      frequency: "3-4x per week",
-    },
-    {
-      id: "hydrating-serum",
-      name: "Hydrating Serum",
-      category: "Serum",
-      ingredient: "Hyaluronic Acid",
-      description: "Boost hydration and support skin barrier",
-      timing: "2-3 minutes",
-      order: 3,
-      frequency: "Daily",
-    },
-    {
-      id: "moisturizer-pm",
-      name: "Rich Night Moisturizer",
-      category: "Moisturizer",
-      ingredient: "Ceramides",
-      description: "Nourish and repair skin overnight",
-      timing: "Apply generously",
-      order: 4,
-      frequency: "Daily",
-    },
-  ],
-}
-
-export default function RoutineBuilderPage() {
-  const [activeTab, setActiveTab] = useState("builder")
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
+          <PageHeader activeTab={activeMainTab as "builder" | "analyzer"} />
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="builder" className="font-open-sans flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4" />
-                Skin Routine
+          <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="builder" className="font-open-sans">
+                Routine Generator
               </TabsTrigger>
-              <TabsTrigger value="advanced" className="font-open-sans flex items-center gap-2">
-                <ClipboardDocumentListIcon className="h-4 w-4" />
-                Advanced Generator
-              </TabsTrigger>
-              <TabsTrigger value="analyzer" className="font-open-sans flex items-center gap-2">
-                <ChartBarIcon className="h-4 w-4" />
+              <TabsTrigger value="analyzer" className="font-open-sans">
                 Routine Analyzer
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="builder">
-              <RoutineBuilder />
-            </TabsContent>
+              <div className="space-y-8">
+                {profile && <ProfileSummary profile={profile} />}
 
-            <TabsContent value="advanced">
-              <AdvancedRoutine />
+                {!generatedRoutine && (
+                  <RoutineGeneratorButton
+                    onGenerate={handleGenerateRoutine}
+                    isGenerating={isGenerating}
+                    error={error}
+                  />
+                )}
+
+                {generatedRoutine && (
+                  <RoutineDisplay
+                    generatedRoutine={generatedRoutine}
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                    onGenerate={handleGenerateRoutine}
+                    onSave={handleSaveRoutine}
+                    isGenerating={isGenerating}
+                    isSaving={isSaving}
+                    onRemoveProduct={handleRemoveProduct}
+                    onRegenerateStep={handleRegenerateStep}
+                    onSelectProduct={handleSelectProduct}
+                    regeneratingStepId={regeneratingStepId}
+                  />
+                )}
+              </div>
             </TabsContent>
 
             <TabsContent value="analyzer">
-              <RoutineAnalyzer />
+              {profile && (
+                <RoutineAnalyzer
+                  profile={profile}
+                  analysisResult={analysisResult}
+                  analysisError={analysisError}
+                  isAnalyzing={isAnalyzing}
+                  onAnalyze={handleAnalyzeRoutine}
+                  onSwitchToBuilder={() => setActiveMainTab("builder")}
+                  onSaveAnalysis={handleSaveAnalysis}
+                  isSavingAnalysis={isSavingAnalysis}
+                  isAnalysisSaved={isAnalysisSaved}
+                />
+              )}
             </TabsContent>
           </Tabs>
         </div>
