@@ -1,77 +1,34 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Separator } from "@/components/ui/separator"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { supabase } from "@/lib/supabase"
-import { 
-  User, 
-  Heart, 
-  Sun, 
-  Moon, 
-  Clock, 
-  Plus,
-  Edit3,
-  Trash2,
-  Camera
-} from "lucide-react"
-import Link from "next/link"
-
-type RoutineStep = {
-  id: string
-  step: number
-  category: "cleanser" | "toner" | "serum" | "moisturizer" | "sunscreen" | "treatment"
-  productName: string
-  brand?: string
-  ingredients?: string[]
-  frequency: "daily" | "alternate" | "weekly" | "as-needed"
-  notes?: string
-}
-
-type UserProfile = {
-  id: string
-  name: string
-  profilePicture?: string
-  skinType: "normal" | "dry" | "oily" | "combination" | "sensitive" | null
-  skinConcerns: string[]
-  skinGoals: string[]
-  allergies: string[]
-  currentRoutine: {
-    morning: RoutineStep[]
-    evening: RoutineStep[]
-  }
-}
-
-const getUserProfile = (): UserProfile | null => {
-  if (typeof window === "undefined") return null
-  const stored = localStorage.getItem("skinwise-profile")
-  return stored ? JSON.parse(stored) : null
-}
-
-const saveUserProfile = (profile: UserProfile): void => {
-  if (typeof window === "undefined") return
-  localStorage.setItem("skinwise-profile", JSON.stringify(profile))
-}
+import { analyzeIngredientCompatibility, CompatibilityReport } from "@/lib/ingredient-compatibility"
+import { UserProfile, RoutineStep } from "@/lib/profile-types"
+import { getUserProfile, saveUserProfile, parseArrayField, initializeFavorites, getCategoryOrder } from "@/lib/profile-utils"
+import { getCurrentRoutine, saveRoutineVersion } from "@/lib/routine-service"
+import LoadingState from "@/components/profile/LoadingState"
+import AuthDenied from "@/components/profile/AuthDenied"
+import NoProfileState from "@/components/profile/NoProfileState"
+import SkinProfileSection from "@/components/profile/SkinProfileSection"
+import RoutineSection from "@/components/profile/RoutineSection"
+import CompatibilityReportComponent from "@/components/profile/CompatibilityReport"
+import PastRoutinesSection from "@/components/profile/PastRoutinesSection"
+import AnalysisReportsSection from "@/components/profile/AnalysisReportsSection"
 
 export default function ProfilePage() {
   const { user, isAuthenticated, isLoading } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [isEditing, setIsEditing] = useState(false)
-  const [newStep, setNewStep] = useState<Partial<RoutineStep>>({})
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Authentication state tracking
-
-  // Add a state to track if we've given enough time for auth to load
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [activeTab, setActiveTab] = useState<"morning" | "evening">("morning")
+  const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [authCheckComplete, setAuthCheckComplete] = useState(false)
+  const [compatibilityReport, setCompatibilityReport] = useState<CompatibilityReport | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [showCompatibilityReport, setShowCompatibilityReport] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  const [isSavingRoutine, setIsSavingRoutine] = useState(false)
+  const [currentRoutineId, setCurrentRoutineId] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     // Give authentication time to load
@@ -99,18 +56,35 @@ export default function ProfilePage() {
           return
         }
 
+        // Fetch current routine from database
+        let currentRoutine: { morning: RoutineStep[]; evening: RoutineStep[] } = { morning: [], evening: [] }
+        try {
+          const userRoutine = await getCurrentRoutine(user.id)
+          if (userRoutine && userRoutine.routine) {
+            currentRoutine = {
+              morning: userRoutine.routine.morning || [],
+              evening: userRoutine.routine.evening || []
+            }
+            setCurrentRoutineId(userRoutine.id)
+          }
+        } catch (error) {
+          console.error('Error fetching current routine:', error)
+          // Fallback to empty routine if fetch fails
+        }
+
         // Create profile from database data
         const userProfile: UserProfile = {
           id: user.id,
           name: `${user.firstName} ${user.lastName}`,
+          bio: dbProfile.bio || undefined,
+          city: dbProfile.city || undefined,
           skinType: dbProfile.skin_type as UserProfile["skinType"] || null,
-          skinConcerns: dbProfile.skin_concerns ? (Array.isArray(dbProfile.skin_concerns) ? dbProfile.skin_concerns : JSON.parse(dbProfile.skin_concerns)) : [],
-          skinGoals: dbProfile.skin_goals ? (Array.isArray(dbProfile.skin_goals) ? dbProfile.skin_goals : JSON.parse(dbProfile.skin_goals)) : [],
-          allergies: dbProfile.ingredient_preferences ? (Array.isArray(dbProfile.ingredient_preferences) ? dbProfile.ingredient_preferences : JSON.parse(dbProfile.ingredient_preferences)) : [],
-          currentRoutine: {
-            morning: [],
-            evening: []
-          }
+          skinConcerns: parseArrayField(dbProfile.skin_concerns),
+          skinGoals: parseArrayField(dbProfile.skin_goals),
+          allergies: parseArrayField(dbProfile.ingredient_preferences),
+          budgetRange: dbProfile.budget_range || undefined,
+          makeupUsage: dbProfile.makeup_usage || undefined,
+          currentRoutine: currentRoutine
         }
 
         // Check for extra quiz data in localStorage
@@ -118,25 +92,30 @@ export default function ProfilePage() {
           const extraData = localStorage.getItem('skinwise-quiz-extra-data')
           if (extraData) {
             const parsedExtraData = JSON.parse(extraData)
-            // Add extra data to allergies (ingredient preferences)
-            if (parsedExtraData.ingredientPreferences && parsedExtraData.ingredientPreferences.length > 0) {
+            if (parsedExtraData.ingredientPreferences?.length > 0) {
               userProfile.allergies = [...userProfile.allergies, ...parsedExtraData.ingredientPreferences]
             }
-            // Loaded extra quiz data from localStorage
+            if (parsedExtraData.budgetRange && !userProfile.budgetRange) {
+              userProfile.budgetRange = parsedExtraData.budgetRange
+            }
+            if (parsedExtraData.makeupUsage && !userProfile.makeupUsage) {
+              userProfile.makeupUsage = parsedExtraData.makeupUsage
+            }
           }
-        } catch (error) {
-          // No extra quiz data found in localStorage
+        } catch {
+          // No extra quiz data found
         }
         
-        // Save to localStorage for offline access
         saveUserProfile(userProfile)
         setProfile(userProfile)
+        setFavorites(initializeFavorites(userProfile))
       } catch (error) {
         console.error('Error initializing profile:', error)
         // Fallback to localStorage if database fails
         const userProfile = getUserProfile()
         if (userProfile) {
           setProfile(userProfile)
+          setFavorites(initializeFavorites(userProfile))
         }
       }
     }
@@ -146,20 +125,28 @@ export default function ProfilePage() {
     }
   }, [user, isAuthenticated])
 
-  const addRoutineStep = (timeOfDay: "morning" | "evening", step: Omit<RoutineStep, "id">): void => {
+
+  const toggleFavorite = (stepId: string) => {
     const currentProfile = getUserProfile()
     if (!currentProfile) return
 
-    const newStep: RoutineStep = {
-      ...step,
-      id: `${timeOfDay}-${Date.now()}`,
+    const updatedFavorites = new Set(favorites)
+    const isFavorite = updatedFavorites.has(stepId)
+    if (isFavorite) {
+      updatedFavorites.delete(stepId)
+    } else {
+      updatedFavorites.add(stepId)
     }
+    setFavorites(updatedFavorites)
+
+    const updateStepFavorite = (steps: RoutineStep[]) => 
+      steps.map(step => step.id === stepId ? { ...step, isFavorite: !isFavorite } : step)
 
     const updatedProfile = {
       ...currentProfile,
       currentRoutine: {
-        ...currentProfile.currentRoutine,
-        [timeOfDay]: [...currentProfile.currentRoutine[timeOfDay], newStep]
+        morning: updateStepFavorite(currentProfile.currentRoutine.morning),
+        evening: updateStepFavorite(currentProfile.currentRoutine.evening)
       }
     }
 
@@ -167,501 +154,419 @@ export default function ProfilePage() {
     setProfile(updatedProfile)
   }
 
-  const removeRoutineStep = (timeOfDay: "morning" | "evening", stepId: string): void => {
-    const currentProfile = getUserProfile()
-    if (!currentProfile) return
+  const handleCheckCompatibility = async () => {
+    if (!profile) return
+    
+    setIsAnalyzing(true)
+    try {
+      const allSteps = [...profile.currentRoutine.morning, ...profile.currentRoutine.evening]
+      const products = allSteps.map(step => ({
+        id: step.id,
+        productName: step.productName,
+        brand: step.brand,
+        ingredients: step.ingredients,
+        category: step.category
+      }))
+      
+      const report = await analyzeIngredientCompatibility(products)
+      setCompatibilityReport(report)
+      setShowCompatibilityReport(true)
+    } catch (error) {
+      console.error('Error analyzing compatibility:', error)
+      alert('Failed to analyze compatibility. Please try again.')
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
 
-    const updatedProfile = {
-      ...currentProfile,
-      currentRoutine: {
-        ...currentProfile.currentRoutine,
-        [timeOfDay]: currentProfile.currentRoutine[timeOfDay].filter((step) => step.id !== stepId)
+  const handleRegenerateRoutine = async () => {
+    if (!profile) return
+    
+    setIsRegenerating(true)
+    try {
+      const response = await fetch('/api/generate-routine', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to regenerate routine'
+        try {
+          const data = await response.json()
+          errorMessage = data.error || errorMessage
+        } catch (e) {
+          // If response is not JSON (e.g., HTML error page), use status text
+          errorMessage = response.statusText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
-    }
 
-    saveUserProfile(updatedProfile)
-    setProfile(updatedProfile)
-  }
-
-  const handleAddStep = (timeOfDay: "morning" | "evening") => {
-    if (!newStep.productName || !newStep.category) return
-
-    addRoutineStep(timeOfDay, {
-      step: (profile?.currentRoutine[timeOfDay].length || 0) + 1,
-      category: newStep.category as RoutineStep["category"],
-      productName: newStep.productName,
-      brand: newStep.brand || "",
-      ingredients: newStep.ingredients || [],
-      frequency: newStep.frequency || "daily",
-      notes: newStep.notes,
-    })
-
-    setNewStep({})
-  }
-
-  const handleRemoveStep = (timeOfDay: "morning" | "evening", stepId: string) => {
-    removeRoutineStep(timeOfDay, stepId)
-  }
-
-  const handleProfilePictureUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file')
-      return
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File size must be less than 5MB')
-      return
-    }
-
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const result = e.target?.result as string
-      if (profile) {
-        const updatedProfile = { ...profile, profilePicture: result }
-        saveUserProfile(updatedProfile)
-        setProfile(updatedProfile)
+      const data = await response.json()
+      const updatedProfile = {
+        ...profile,
+        currentRoutine: data.routine
       }
-    }
-    reader.readAsDataURL(file)
-  }
-
-  const removeProfilePicture = () => {
-    if (profile) {
-      const updatedProfile = { ...profile, profilePicture: undefined }
       saveUserProfile(updatedProfile)
       setProfile(updatedProfile)
+      alert('Routine regenerated successfully!')
+    } catch (error) {
+      console.error('Error regenerating routine:', error)
+      alert(error instanceof Error ? error.message : 'Failed to regenerate routine')
+    } finally {
+      setIsRegenerating(false)
     }
   }
 
+  const handleTabChange = (tab: "morning" | "evening") => {
+    setActiveTab(tab)
+  }
+
+  const handleEditToggle = () => {
+    setIsEditingProfile(prev => !prev)
+  }
+
+  const handleRemoveStep = (stepId: string, timeOfDay: "morning" | "evening") => {
+    if (!profile) return
+
+    const updatedSteps = profile.currentRoutine[timeOfDay].filter(step => step.id !== stepId)
+    
+    // Re-assign step numbers based on sorted order
+    const sortedSteps = updatedSteps
+      .sort((a, b) => {
+        const orderA = getCategoryOrder(a.category)
+        const orderB = getCategoryOrder(b.category)
+        return orderA - orderB
+      })
+      .map((step, index) => ({
+        ...step,
+        step: index + 1
+      }))
+
+    const updatedProfile = {
+      ...profile,
+      currentRoutine: {
+        ...profile.currentRoutine,
+        [timeOfDay]: sortedSteps
+      }
+    }
+
+    saveUserProfile(updatedProfile)
+    setProfile(updatedProfile)
+  }
+
+  const handleAddProduct = (product: any, category: RoutineStep["category"], timeOfDay: "morning" | "evening") => {
+    if (!profile) return
+
+    // Get existing steps for the time of day
+    const existingSteps = [...profile.currentRoutine[timeOfDay]]
+
+    // Parse ingredients - handle both array and JSONB string formats
+    let ingredients: string[] = []
+    if (product.ingredients) {
+      if (Array.isArray(product.ingredients)) {
+        ingredients = product.ingredients
+      } else if (typeof product.ingredients === 'string') {
+        try {
+          const parsed = JSON.parse(product.ingredients)
+          ingredients = Array.isArray(parsed) ? parsed : []
+        } catch {
+          // If parsing fails, treat as empty array
+          ingredients = []
+        }
+      }
+    }
+
+    // Check if a step with this category already exists
+    const existingCategoryIndex = existingSteps.findIndex(step => step.category === category)
+
+    // Create a new RoutineStep from the product
+    const newStep: RoutineStep = {
+      id: `product-${product.id}-${Date.now()}`,
+      step: 0, // Will be set after sorting
+      category: category,
+      productName: product.productName,
+      brand: product.productBrand,
+      price: product.price,
+      ingredients: ingredients,
+      frequency: "daily",
+      imageUrl: product.imgURL || undefined,
+      productURL: product.productURL || undefined,
+      isFavorite: false
+    }
+
+    // If category exists, replace it; otherwise add new step
+    if (existingCategoryIndex >= 0) {
+      existingSteps[existingCategoryIndex] = newStep
+    } else {
+      existingSteps.push(newStep)
+    }
+
+    // Sort steps by category order
+    existingSteps.sort((a, b) => {
+      const orderA = getCategoryOrder(a.category)
+      const orderB = getCategoryOrder(b.category)
+      return orderA - orderB
+    })
+
+    // Re-assign step numbers based on sorted order
+    const sortedSteps = existingSteps.map((step, index) => ({
+      ...step,
+      step: index + 1
+    }))
+
+    // Update the routine
+    let updatedProfile = {
+      ...profile,
+      currentRoutine: {
+        ...profile.currentRoutine,
+        [timeOfDay]: sortedSteps
+      }
+    }
+
+    // If adding in morning routine, also add to evening for shared categories
+    // Categories that are shared: cleanser, toner, serum, moisturizer
+    const sharedCategories = ['cleanser', 'toner', 'serum', 'moisturizer']
+    if (timeOfDay === 'morning' && sharedCategories.includes(category)) {
+      const eveningSteps = [...updatedProfile.currentRoutine.evening]
+      const existingEveningCategoryIndex = eveningSteps.findIndex(step => step.category === category)
+      
+      // Create the same step for evening
+      const eveningStep: RoutineStep = {
+        ...newStep,
+        id: `product-${product.id}-evening-${Date.now()}` // Different ID for evening
+      }
+      
+      if (existingEveningCategoryIndex >= 0) {
+        // Replace existing evening step
+        eveningSteps[existingEveningCategoryIndex] = eveningStep
+      } else {
+        // Add new evening step
+        eveningSteps.push(eveningStep)
+      }
+      
+      // Sort evening steps by category order
+      eveningSteps.sort((a, b) => {
+        const orderA = getCategoryOrder(a.category)
+        const orderB = getCategoryOrder(b.category)
+        return orderA - orderB
+      })
+      
+      // Re-assign step numbers
+      const sortedEveningSteps = eveningSteps.map((step, index) => ({
+        ...step,
+        step: index + 1
+      }))
+      
+      updatedProfile = {
+        ...updatedProfile,
+        currentRoutine: {
+          ...updatedProfile.currentRoutine,
+          evening: sortedEveningSteps
+        }
+      }
+    }
+
+    // Save to localStorage and update state
+    saveUserProfile(updatedProfile)
+    setProfile(updatedProfile)
+  }
+
+  const handleSkipProduct = (category: RoutineStep["category"], timeOfDay: "morning" | "evening") => {
+    if (!profile) return
+
+    // Get existing steps for the time of day
+    const existingSteps = [...profile.currentRoutine[timeOfDay]]
+
+    // Check if a step with this category already exists
+    const existingCategoryIndex = existingSteps.findIndex(step => step.category === category)
+
+    // Create a placeholder step to mark the category as skipped
+    const skippedStep: RoutineStep = {
+      id: `skipped-${category}-${Date.now()}`,
+      step: 0, // Will be set after sorting
+      category: category,
+      productName: "Skipped - No product",
+      brand: undefined,
+      ingredients: [],
+      frequency: "daily",
+      isFavorite: false
+    }
+
+    // If category exists, replace it; otherwise add new step
+    if (existingCategoryIndex >= 0) {
+      existingSteps[existingCategoryIndex] = skippedStep
+    } else {
+      existingSteps.push(skippedStep)
+    }
+
+    // Sort steps by category order
+    existingSteps.sort((a, b) => {
+      const orderA = getCategoryOrder(a.category)
+      const orderB = getCategoryOrder(b.category)
+      return orderA - orderB
+    })
+
+    // Re-assign step numbers based on sorted order
+    const sortedSteps = existingSteps.map((step, index) => ({
+      ...step,
+      step: index + 1
+    }))
+
+    // Update the routine
+    const updatedProfile = {
+      ...profile,
+      currentRoutine: {
+        ...profile.currentRoutine,
+        [timeOfDay]: sortedSteps
+      }
+    }
+
+    // Save to localStorage and update state
+    saveUserProfile(updatedProfile)
+    setProfile(updatedProfile)
+  }
+
+  const handleSaveRoutine = async () => {
+    if (!profile || !user) return
+
+    setIsSavingRoutine(true)
+    try {
+      // Use the service function which handles filtering and validation
+      // The database trigger automatically unsets other current routines,
+      // so we don't need to do that manually
+      const newRoutine = await saveRoutineVersion(
+        user.id,
+        profile.currentRoutine,
+        null // name can be set later if needed
+      )
+
+      // Update the current routine ID
+      if (newRoutine) {
+        setCurrentRoutineId(newRoutine.id)
+      }
+
+      // Also update users table for backward compatibility (non-blocking)
+      // This is optional and runs in the background so it doesn't slow down the save
+      ;(async () => {
+        try {
+          const { error } = await supabase
+            .from('users')
+            .update({
+              current_routine: {
+                morning: profile.currentRoutine.morning || [],
+                evening: profile.currentRoutine.evening || []
+              },
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id)
+
+          // Only log if it's not a missing column error
+          if (error && !error.message.includes('column "current_routine"')) {
+            console.warn('Could not update users.current_routine:', error)
+          }
+        } catch (err) {
+          // Silently fail - this is optional
+          console.warn('Optional users table update failed:', err)
+        }
+      })()
+
+      // Also save to localStorage for consistency
+      saveUserProfile(profile)
+      
+      alert('Routine saved successfully!')
+    } catch (error) {
+      console.error('Error saving routine:', error)
+      alert('Failed to save routine. Please try again.')
+    } finally {
+      setIsSavingRoutine(false)
+    }
+  }
 
   // Show loading while authentication is being checked
   if (isLoading || !authCheckComplete) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="font-open-sans text-muted-foreground">Loading...</p>
-          </div>
-        </div>
-      </div>
-    )
+    return <LoadingState />
   }
 
   // Check authentication after giving it time to load
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <h1 className="font-montserrat font-bold text-2xl text-foreground mb-4">
-              Access Denied
-            </h1>
-            <p className="font-open-sans text-muted-foreground mb-6">
-              You need to be logged in to view your routine.
-            </p>
-            <div className="space-x-4">
-              <Button asChild>
-                <Link href="/auth/signin">Sign In</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/auth/signup">Create Account</Link>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    return <AuthDenied />
   }
 
   if (!profile) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="max-w-2xl mx-auto text-center px-4">
-          <div className="mb-8">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Heart className="h-8 w-8 text-primary" />
-            </div>
-            <h1 className="font-montserrat font-black text-4xl text-foreground mb-4">
-              Create Your Skincare Routine
-            </h1>
-            <p className="font-open-sans text-lg text-muted-foreground mb-8">
-              Start building your personalized skincare routine to achieve your skin goals.
-            </p>
-          </div>
-          
-          <Button asChild size="lg" className="font-open-sans font-medium">
-            <Link href="/skin-routine">Complete Your Profile First</Link>
-          </Button>
-        </div>
-      </div>
-    )
+    return <NoProfileState />
   }
 
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8">
-        {/* Enhanced User Profile Header */}
-        <div className="mb-8">
-          
-          <div className="flex items-center gap-6 mb-8">
-            <div className="relative">
-              <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center overflow-hidden">
-                {profile.profilePicture ? (
-                  <img 
-                    src={profile.profilePicture} 
-                    alt="Profile" 
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <User className="h-12 w-12 text-primary" />
-                )}
-              </div>
-              {isEditing && (
-                <div className="absolute -bottom-1 -right-1 flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-8 w-8 p-0 rounded-full"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Camera className="h-4 w-4" />
-                  </Button>
-                  {profile.profilePicture && (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="h-8 w-8 p-0 rounded-full"
-                      onClick={removeProfilePicture}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleProfilePictureUpload}
-                className="hidden"
-              />
-            </div>
-            <div className="flex-1">
-              <h2 className="font-montserrat font-black text-4xl text-foreground mb-2">{profile.name}</h2>
-              <p className="font-open-sans text-lg text-muted-foreground">Your Personalized Skincare Journey</p>
-              <div className="flex items-center gap-2 mt-3">
-                <Badge variant="secondary" className="text-sm">
-                  {profile.skinType ? `${profile.skinType.charAt(0).toUpperCase() + profile.skinType.slice(1)} Skin` : 'Profile Setup'}
-                </Badge>
-              </div>
-            </div>
-            <Button 
-              onClick={() => setIsEditing(!isEditing)}
-              variant={isEditing ? "outline" : "default"}
-              className="font-sans"
-            >
-              <Edit3 className="mr-2 h-4 w-4" />
-              {isEditing ? "Done Editing" : "Edit Profile"}
-            </Button>
-          </div>
-          
-          {/* Enhanced Skin Info Section */}
-          <div className="bg-gradient-to-r from-primary/5 to-secondary/5 rounded-xl p-8 border border-primary/10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                <Heart className="h-5 w-5 text-primary" />
-              </div>
-              <h2 className="font-montserrat font-bold text-2xl">My Skin Profile</h2>
-            </div>
-            <div className="space-y-4">
-              {!profile.skinType && profile.skinConcerns.length === 0 ? (
-                <div className="text-center py-4">
-                  <p className="text-muted-foreground mb-4">
-                    Complete your skin profile to get personalized recommendations
-                  </p>
-                  <div className="flex gap-3 justify-center">
-                    <Button asChild>
-                      <Link href="/skin-quiz">Take Skin Quiz</Link>
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-4">
-                    {/* Top Concerns */}
-                    {profile.skinConcerns && profile.skinConcerns.length > 0 && (
-                      <div>
-                        <p className="text-sm font-medium text-foreground mb-2">
-                          Top Concerns: <span className="text-muted-foreground">{profile.skinConcerns.join(", ")}</span>
-                        </p>
-                      </div>
-                    )}
+        <div className="space-y-8">
+          <SkinProfileSection 
+            profile={profile}
+            isEditingProfile={isEditingProfile}
+            onEditToggle={handleEditToggle}
+            onProfileChange={setProfile}
+          />
 
-                    {/* Skin Type */}
-                    {profile.skinType && (
-                      <div>
-                        <p className="text-sm font-medium text-foreground mb-2">
-                          Skin Feel: <span className="text-muted-foreground capitalize">{profile.skinType}</span>
-                        </p>
-                      </div>
-                    )}
+          <RoutineSection
+            profile={profile}
+            activeTab={activeTab}
+            favorites={favorites}
+            onTabChange={handleTabChange}
+            onToggleFavorite={toggleFavorite}
+            onRemoveStep={handleRemoveStep}
+            onAddProduct={handleAddProduct}
+            onSkipProduct={handleSkipProduct}
+            onSaveRoutine={handleSaveRoutine}
+            isSavingRoutine={isSavingRoutine}
+            makeupUsage={user?.makeupUsage}
+          />
 
-                    {/* Skin Goals */}
-                    {profile.skinGoals && profile.skinGoals.length > 0 && (
-                      <div>
-                        <p className="text-sm font-medium text-foreground mb-2">
-                          Skin Goals: <span className="text-muted-foreground">{profile.skinGoals.join(", ")}</span>
-                        </p>
-                      </div>
-                    )}
+          {user && (
+            <PastRoutinesSection
+              userId={user.id}
+              currentRoutineId={currentRoutineId}
+              onRoutineRestored={async () => {
+                // Refresh the profile and current routine after restoration
+                if (!user) return
+                
+                try {
+                  const userRoutine = await getCurrentRoutine(user.id)
+                  if (userRoutine && userRoutine.routine) {
+                    const updatedProfile = {
+                      ...profile!,
+                      currentRoutine: {
+                        morning: userRoutine.routine.morning || [],
+                        evening: userRoutine.routine.evening || []
+                      }
+                    }
+                    setCurrentRoutineId(userRoutine.id)
+                    saveUserProfile(updatedProfile)
+                    setProfile(updatedProfile)
+                  }
+                } catch (error) {
+                  console.error('Error refreshing routine after restoration:', error)
+                }
+              }}
+            />
+          )}
 
-                    {/* Ingredient Preferences */}
-                    {profile.allergies && profile.allergies.length > 0 && (
-                      <div>
-                        <p className="text-sm font-medium text-foreground mb-2">
-                          Ingredient Preferences: <span className="text-muted-foreground">{profile.allergies.join(", ")}</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="mt-4 pt-4 border-t border-primary/10">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href="/skin-quiz">Update Skin Profile</Link>
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          {user && (
+            <AnalysisReportsSection
+              userId={user.id}
+            />
+          )}
+
+          {/* Compatibility Report */}
+          {showCompatibilityReport && compatibilityReport && (
+            <CompatibilityReportComponent
+              report={compatibilityReport}
+              onClose={() => setShowCompatibilityReport(false)}
+            />
+          )}
         </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                <Sun className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Morning Steps</p>
-                <p className="text-2xl font-bold">{profile.currentRoutine.morning.length}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                <Moon className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Evening Steps</p>
-                <p className="text-2xl font-bold">{profile.currentRoutine.evening.length}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                <Clock className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Products</p>
-                <p className="text-2xl font-bold">{profile.currentRoutine.morning.length + profile.currentRoutine.evening.length}</p>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Enhanced Routine Tabs */}
-        <Tabs defaultValue="morning" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="morning" className="font-open-sans flex items-center gap-2">
-              <Sun className="h-4 w-4" />
-              Morning Routine ({profile.currentRoutine.morning.length})
-            </TabsTrigger>
-            <TabsTrigger value="evening" className="font-open-sans flex items-center gap-2">
-              <Moon className="h-4 w-4" />
-              Evening Routine ({profile.currentRoutine.evening.length})
-            </TabsTrigger>
-          </TabsList>
-
-          {(["morning", "evening"] as const).map((timeOfDay) => (
-            <TabsContent key={timeOfDay} value={timeOfDay} className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-montserrat font-bold text-xl">
-                  {timeOfDay === "morning" ? "☀️ Morning" : "🌙 Evening"} Routine
-                </h3>
-                <Button 
-                  onClick={() => setIsEditing(!isEditing)} 
-                  variant="outline" 
-                  size="sm"
-                >
-                  <Edit3 className="w-4 h-4 mr-2" />
-                  {isEditing ? "Done Editing" : "Edit Routine"}
-                </Button>
-              </div>
-
-              {/* Routine Steps */}
-              <div className="space-y-4">
-                {profile.currentRoutine[timeOfDay].length === 0 ? (
-                  <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-12">
-                      <Heart className="h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="font-medium text-lg mb-2">No {timeOfDay} routine yet</h3>
-                      <p className="text-muted-foreground text-center mb-4">
-                        Start building your {timeOfDay} skincare routine by adding products.
-                      </p>
-                      <Button onClick={() => setIsEditing(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add First Step
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  profile.currentRoutine[timeOfDay].map((step, index) => (
-                    <Card key={step.id} className="relative">
-                      <CardContent className="p-6">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-4">
-                            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
-                              {step.step}
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-medium text-lg">{step.productName}</h4>
-                              {step.brand && (
-                                <p className="text-sm text-muted-foreground mb-2">by {step.brand}</p>
-                              )}
-                              <div className="flex items-center gap-2 mb-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {step.category}
-                                </Badge>
-                                <Badge variant="secondary" className="text-xs">
-                                  {step.frequency}
-                                </Badge>
-                              </div>
-                              {step.notes && (
-                                <p className="text-sm text-muted-foreground">{step.notes}</p>
-                              )}
-                            </div>
-                          </div>
-                          {isEditing && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={() => handleRemoveStep(timeOfDay, step.id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </div>
-
-              {/* Add New Step Form */}
-              {isEditing && (
-                <Card className="border-dashed">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Add New Step</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="category">Product Category</Label>
-                        <Select
-                          onValueChange={(value) =>
-                            setNewStep({ ...newStep, category: value as RoutineStep["category"] })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="cleanser">Cleanser</SelectItem>
-                            <SelectItem value="toner">Toner</SelectItem>
-                            <SelectItem value="serum">Serum</SelectItem>
-                            <SelectItem value="moisturizer">Moisturizer</SelectItem>
-                            <SelectItem value="sunscreen">Sunscreen</SelectItem>
-                            <SelectItem value="treatment">Treatment</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="productName">Product Name</Label>
-                        <input
-                          type="text"
-                          placeholder="Enter product name"
-                          value={newStep.productName || ""}
-                          onChange={(e) => setNewStep({ ...newStep, productName: e.target.value })}
-                          className="w-full px-3 py-2 border border-input rounded-md"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="brand">Brand (Optional)</Label>
-                        <input
-                          type="text"
-                          placeholder="Enter brand name"
-                          value={newStep.brand || ""}
-                          onChange={(e) => setNewStep({ ...newStep, brand: e.target.value })}
-                          className="w-full px-3 py-2 border border-input rounded-md"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="frequency">Frequency</Label>
-                        <Select
-                          onValueChange={(value) =>
-                            setNewStep({ ...newStep, frequency: value as RoutineStep["frequency"] })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select frequency" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="daily">Daily</SelectItem>
-                            <SelectItem value="alternate">Every Other Day</SelectItem>
-                            <SelectItem value="weekly">Weekly</SelectItem>
-                            <SelectItem value="as-needed">As Needed</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="notes">Notes (Optional)</Label>
-                      <textarea
-                        placeholder="Any additional notes about this product..."
-                        value={newStep.notes || ""}
-                        onChange={(e) => setNewStep({ ...newStep, notes: e.target.value })}
-                        className="w-full px-3 py-2 border border-input rounded-md"
-                        rows={3}
-                      />
-                    </div>
-                    <Button
-                      onClick={() => handleAddStep(timeOfDay)}
-                      disabled={!newStep.productName || !newStep.category}
-                      className="w-full"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Step
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-          ))}
-        </Tabs>
       </main>
     </div>
   )
-
 }
