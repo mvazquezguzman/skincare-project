@@ -30,7 +30,7 @@ interface AuthContextType {
     email: string
     password: string
   }) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   isAuthenticated: boolean
 }
 
@@ -41,14 +41,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    let isMounted = true
+    let initialLoadComplete = false
+
     const getInitialSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
           console.error('Error getting session:', error)
-          setUser(null)
-          setIsLoading(false)
+          if (isMounted) {
+            setUser(null)
+            setIsLoading(false)
+            initialLoadComplete = true
+          }
           return
         }
 
@@ -57,16 +63,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
           
           if (refreshError) {
-            setUser(null)
-            setIsLoading(false)
+            if (isMounted) {
+              setUser(null)
+              setIsLoading(false)
+              initialLoadComplete = true
+            }
             return
           }
           
           if (refreshedSession?.user) {
             sessionToUse = refreshedSession
           } else {
-            setUser(null)
-            setIsLoading(false)
+            if (isMounted) {
+              setUser(null)
+              setIsLoading(false)
+              initialLoadComplete = true
+            }
             return
           }
         }
@@ -95,31 +107,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          const userData: User = {
-            id: sessionToUse.user.id,
-            email: sessionToUse.user.email || "",
-            firstName: profile?.first_name || sessionToUse.user.user_metadata?.first_name || "",
-            lastName: profile?.last_name || sessionToUse.user.user_metadata?.last_name || "",
-            avatar: profile?.avatar || '/placeholder.jpg',
-            skinType: profile?.skin_type,
-            skinConcerns: profile?.skin_concerns,
-            skinGoals: profile?.skin_goals,
-            allergies: profile?.allergies,
-            makeupUsage: profile?.makeup_usage,
-            sunscreenPreference: profile?.sunscreen_preference,
-            ingredientPreferences: profile?.ingredient_preferences,
-            quizCompleted: profile?.quiz_completed || false,
-            quizCompletedAt: profile?.quiz_completed_at
+          if (isMounted) {
+            const userData: User = {
+              id: sessionToUse.user.id,
+              email: sessionToUse.user.email || "",
+              firstName: profile?.first_name || sessionToUse.user.user_metadata?.first_name || "",
+              lastName: profile?.last_name || sessionToUse.user.user_metadata?.last_name || "",
+              avatar: profile?.avatar || '/placeholder.jpg',
+              skinType: profile?.skin_type,
+              skinConcerns: profile?.skin_concerns,
+              skinGoals: profile?.skin_goals,
+              allergies: profile?.allergies,
+              makeupUsage: profile?.makeup_usage,
+              sunscreenPreference: profile?.sunscreen_preference,
+              ingredientPreferences: profile?.ingredient_preferences,
+              quizCompleted: profile?.quiz_completed || false,
+              quizCompletedAt: profile?.quiz_completed_at
+            }
+            setUser(userData)
+            setIsLoading(false)
+            initialLoadComplete = true
           }
-          setUser(userData)
         } else {
-          setUser(null)
+          if (isMounted) {
+            setUser(null)
+            setIsLoading(false)
+            initialLoadComplete = true
+          }
         }
       } catch (error) {
         console.error('Error in getInitialSession:', error)
-        setUser(null)
-      } finally {
-        setIsLoading(false)
+        if (isMounted) {
+          setUser(null)
+          setIsLoading(false)
+          initialLoadComplete = true
+        }
       }
     }
 
@@ -127,6 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Don't update state during initial load to avoid race conditions
+        // The first event is typically the initial session, so we skip it
+        if (!initialLoadComplete) {
+          return
+        }
+
         if (session?.user) {
           const { data: profile, error: profileError } = await supabase
             .from('users')
@@ -151,28 +179,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          const userData: User = {
-            id: session.user.id,
-            email: session.user.email || "",
-            firstName: profile?.first_name || session.user.user_metadata?.first_name || "",
-            lastName: profile?.last_name || session.user.user_metadata?.last_name || "",
-            avatar: profile?.avatar || '/placeholder.jpg',
-            skinType: profile?.skin_type,
-            skinConcerns: profile?.skin_concerns,
-            skinGoals: profile?.skin_goals,
-            allergies: profile?.allergies,
-            quizCompleted: profile?.quiz_completed || false,
-            quizCompletedAt: profile?.quiz_completed_at
+          if (isMounted) {
+            const userData: User = {
+              id: session.user.id,
+              email: session.user.email || "",
+              firstName: profile?.first_name || session.user.user_metadata?.first_name || "",
+              lastName: profile?.last_name || session.user.user_metadata?.last_name || "",
+              avatar: profile?.avatar || '/placeholder.jpg',
+              skinType: profile?.skin_type,
+              skinConcerns: profile?.skin_concerns,
+              skinGoals: profile?.skin_goals,
+              allergies: profile?.allergies,
+              quizCompleted: profile?.quiz_completed || false,
+              quizCompletedAt: profile?.quiz_completed_at
+            }
+            setUser(userData)
+            // Update loading state for sign in/out events
+            if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') {
+              setIsLoading(false)
+            }
           }
-          setUser(userData)
         } else {
-          setUser(null)
+          if (isMounted) {
+            setUser(null)
+            // Always update loading state when there's no session
+            setIsLoading(false)
+          }
         }
-        setIsLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const login = async (email: string, password: string) => {
@@ -185,13 +225,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error('AuthContext: Login error:', error)
+        setIsLoading(false)
         throw new Error(error.message || 'Login failed')
       }
+      // Don't set isLoading to false here - let the auth state change listener handle it
+      // This ensures the user state is properly updated before we stop loading
     } catch (error) {
       console.error('AuthContext: Login error:', error)
-      throw error
-    } finally {
       setIsLoading(false)
+      throw error
     }
   }
 
@@ -216,19 +258,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error('AuthContext: Signup error:', error)
+        setIsLoading(false)
         throw new Error(error.message || 'Signup failed')
       }
+      // Don't set isLoading to false here - let the auth state change listener handle it
+      // This ensures the user state is properly updated before we stop loading
     } catch (error) {
       console.error('Signup failed:', error)
-      throw error
-    } finally {
       setIsLoading(false)
+      throw error
     }
   }
 
   const logout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
+    setIsLoading(true)
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('AuthContext: Logout error:', error)
+        throw error
+      }
+      setUser(null)
+    } catch (error) {
+      console.error('AuthContext: Logout error:', error)
+      // Still clear user state even if signOut fails
+      setUser(null)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const value: AuthContextType = {
