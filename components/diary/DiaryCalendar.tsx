@@ -3,7 +3,7 @@
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DiaryEntry } from "@/lib/diary-types"
-import { format, parseISO } from "date-fns"
+import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useMemo } from "react"
 import * as React from "react"
@@ -42,19 +42,19 @@ export function DiaryCalendar({
   const DayComponent = React.useCallback((props: any) => {
     // react-day-picker v9 passes 'day' object with 'date' property, or 'date' directly
     const date = props.day?.date || props.date
-    const { displayMonth, className, onClick, day, ...buttonProps } = props
+    const { displayMonth, className, onClick, ...buttonProps } = props
     
     if (!date) {
-      return <div className="h-9 w-9" />
+      return <></>
     }
     
     // Check if this is an outside day by checking className or comparing dates
     const isOutsideDay = className?.includes('day-outside') || 
       (displayMonth && (date.getMonth() !== displayMonth.getMonth() || date.getFullYear() !== displayMonth.getFullYear()))
     
-    // For outside days, render an empty div to maintain grid structure
+    // For outside days, return empty fragment (they should be hidden by CSS)
     if (isOutsideDay) {
-      return <div className="h-9 w-9" />
+      return <></>
     }
     
     const dateStr = format(date, "yyyy-MM-dd")
@@ -102,6 +102,11 @@ export function DiaryCalendar({
         <CardTitle className="font-montserrat text-lg">Calendar</CardTitle>
       </CardHeader>
       <CardContent>
+        <style dangerouslySetInnerHTML={{__html: `
+          .rdp-table { margin-top: 0 !important; }
+          .rdp-head_row { margin-bottom: 0 !important; }
+          .rdp-row:first-of-type { margin-top: 0 !important; }
+        `}} />
         <Calendar
           mode="single"
           selected={selectedDate}
@@ -109,14 +114,14 @@ export function DiaryCalendar({
           month={currentMonth}
           onMonthChange={onMonthChange}
           className="w-full"
-          showOutsideDays={true}
+          showOutsideDays={false}
           fixedWeeks={false}
           components={{
             Day: DayComponent,
           }}
           classNames={{
             months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-            month: "space-y-4",
+            month: "space-y-2",
             caption: "flex justify-center pt-1 relative items-center",
             caption_label: "text-sm font-medium",
             nav: "space-x-1 flex items-center",
@@ -124,14 +129,14 @@ export function DiaryCalendar({
             nav_button_previous: "absolute left-1",
             nav_button_next: "absolute right-1",
             table: "w-full border-collapse",
-            head_row: "flex w-full",
-            head_cell: "text-muted-foreground w-9 h-9 font-normal text-[0.8rem] flex items-center justify-center flex-shrink-0 p-0",
+            head_row: "flex w-full mb-0",
+            head_cell: "text-muted-foreground w-9 h-9 font-normal text-[0.8rem] flex items-center justify-center flex-shrink-0 p-0 m-0",
             row: "flex w-full mt-1",
-            cell: "h-9 w-9 flex items-center justify-center text-sm p-0 relative flex-shrink-0 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+            cell: "h-9 w-9 flex items-center justify-center text-sm p-0 m-0 relative flex-shrink-0 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20 [&:has(.day-outside)]:!hidden [&:empty]:!hidden",
             day: "h-9 w-9 p-0 font-normal aria-selected:opacity-100",
             day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
             day_today: "bg-accent text-accent-foreground",
-            day_outside: "invisible",
+            day_outside: "hidden",
             day_disabled: "text-muted-foreground opacity-50",
             day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
             day_hidden: "invisible",
