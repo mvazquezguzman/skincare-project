@@ -5,22 +5,22 @@
 
 :root {
   /* Palette inspired by the screenshot: deep green, warm beige, lime accent */
-  --background: oklch(0.97 0.02 95); /* warm beige background */
-  --foreground: oklch(0.25 0.04 155); /* deep green text */
-  --card: oklch(0.985 0.01 95); /* lighter beige for cards */
-  --card-foreground: oklch(0.28 0.04 155);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.04 155);
-  --primary: oklch(0.35 0.07 155); /* deep forest green for header/buttons */
-  --primary-foreground: oklch(0.99 0 0); /* white */
-  --secondary: oklch(0.9 0.17 125); /* lime accent for CTAs */
-  --secondary-foreground: oklch(0.25 0.04 155);
-  --muted: oklch(0.95 0.015 95); /* soft beige sections */
-  --muted-foreground: oklch(0.42 0.02 150);
-  --accent: oklch(0.9 0.17 125); /* reuse lime */
-  --accent-foreground: oklch(0.25 0.04 155);
-  --destructive: oklch(0.62 0.17 27);
-  --destructive-foreground: oklch(0.99 0 0);
+  --background: #FFFFFF; /* white background */
+  --foreground: #1A2E12; /* deep green text */
+  --card: #F3F3F4; /* light gray for cards */
+  --card-foreground: #1A2E12; /* deep green text */
+  --popover: #FFFFFF; /* white popover */
+  --popover-foreground: #000000; /* black text */
+  --primary: #1A2E12; /* deep green */
+  --primary-foreground: #FFFFFF; /* white */
+  --secondary: #7F89E9; /* purple accent for CTAs */
+  --secondary-foreground: #FFFFFF; /* white text for CTAs */
+  --muted: #FFFFFF; /* light green sections */
+  --muted-foreground: #1A2E12; /* deep green text */
+  --accent: #658751; /* light green accent */
+  --accent-foreground: #1A2E12; /* deep green text */
+  --destructive: #FF0000; /* red */
+  --destructive-foreground: oklch(0.99 0 0); 
   --border: oklch(0.9 0.01 95); /* subtle lines */
   --input: oklch(1 0 0);
   --ring: oklch(0.9 0.17 125 / 0.5); /* lime focus ring */
@@ -122,6 +122,9 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  .font-playfair {
+    font-family: var(--font-josefin-sans), "Josefin Sans", sans-serif;
   }
 }
 
