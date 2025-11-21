@@ -4,6 +4,8 @@ import React, { useState, useEffect, useId, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase } from '@/lib/supabase';
 import { useOutsideClick } from '@/hooks/use-outside-click';
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -38,6 +40,7 @@ export default function ProductsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [productsPerPage] = useState(50);
   const [expandedProduct, setExpandedProduct] = useState<Product | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
 
@@ -101,18 +104,30 @@ export default function ProductsPage() {
     }
   };
 
-  // Filter products by selected categories
+  // Filter products by selected categories and search term
   useEffect(() => {
-    if (selectedCategories.size === 0) {
-      setFilteredProducts(products);
-    } else {
-      const filtered = products.filter(product => 
+    let filtered = products;
+
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(product => 
+        product.productName.toLowerCase().includes(searchLower) ||
+        product.productBrand.toLowerCase().includes(searchLower) ||
+        (product.description && product.description.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Filter by selected categories
+    if (selectedCategories.size > 0) {
+      filtered = filtered.filter(product => 
         product.categoryName && selectedCategories.has(product.categoryName)
       );
-      setFilteredProducts(filtered);
     }
+
+    setFilteredProducts(filtered);
     setCurrentPage(1);
-  }, [selectedCategories, products]);
+  }, [selectedCategories, products, searchTerm]);
 
   // Sorting function
   const sortProducts = (products: Product[], sortOption: SortOption): Product[] => {
@@ -228,7 +243,7 @@ export default function ProductsPage() {
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold mb-6">Products</h1>
+        <h1 className="text-3xl font-bold mb-6">Products Search</h1>
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
         </div>
@@ -239,7 +254,7 @@ export default function ProductsPage() {
   if (error && products.length === 0) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold mb-6">Products</h1>
+        <h1 className="text-3xl font-bold mb-6">Products Search</h1>
         <div className="text-center py-12">
           <p className="text-red-600 mb-4">Failed to load products. Please try again.</p>
           <button 
@@ -255,18 +270,23 @@ export default function ProductsPage() {
 
   return (
     <div className="container mx-auto px-4 py-4 md:py-8">
-      <h1 className="text-2xl md:text-3xl font-bold mb-4 md:mb-6">All Skincare Products</h1>
+      <h1 className="font-montserrat font-black text-3xl md:text-4xl text-foreground mb-2">Products Search</h1>
       
-      <p className="text-gray-600 mb-4 md:mb-8 text-sm md:text-base">
+      <p className="font-open-sans text-lg text-muted-foreground max-w-2xl mb-4 md:mb-8">
         Search and filter thorught all the skincare products.
       </p>
       
-      {/* Product Count */}
-      <div className="mb-2 md:mb-4">
-        <p className="text-xs md:text-sm text-gray-500">
-          Showing {startIndex + 1}-{Math.min(endIndex, sortedProducts.length)} of {sortedProducts.length} products
-          {selectedCategories.size > 0 && ` (${products.length} total)`}
-        </p>
+      {/* Search Bar */}
+      <div className="mb-4 md:mb-6">
+        <div className="relative">
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <Input
+            placeholder="Search products, brands, or descriptions..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 font-open-sans w-full rounded-lg border border-gray-200 bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
       </div>
       
       {/* Category Filters */}
@@ -286,6 +306,14 @@ export default function ProductsPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Product Count */}
+      <div className="mb-2 md:mb-4">
+        <p className="text-xs md:text-sm text-gray-500">
+          Showing {startIndex + 1}-{Math.min(endIndex, sortedProducts.length)} of {sortedProducts.length} products
+          {selectedCategories.size > 0 && ` (${products.length} total)`}
+        </p>
       </div>
 
       {/* Sorting Controls */}
